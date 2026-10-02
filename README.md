@@ -83,4 +83,4 @@ dist\OutlookAiHelper.Tests.exe
 
 ## 授權
 
-尚未指定授權條款（預設保留所有權利）。
+MIT License，詳見 [LICENSE](LICENSE)。
