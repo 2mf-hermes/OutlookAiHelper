@@ -81,8 +81,11 @@ if ([string]::IsNullOrWhiteSpace($Notes)) {
     $Notes = "Outlook AI 助手 $version`n`n以內建更新檢查下載安裝，或直接取用本頁附檔。"
 }
 
-& gh release view $tag --repo $Repo 1>$null 2>$null
-$releaseExists = ($LASTEXITCODE -eq 0)
+# Probing with 'gh release view' prints "release not found" on stderr, which
+# PowerShell turns into a terminating error at $ErrorActionPreference = 'Stop'.
+# Listing cannot fail, so use that instead.
+$existing = (& gh release list --repo $Repo --json tagName --limit 200 | ConvertFrom-Json)
+$releaseExists = (@($existing | ForEach-Object { $_.tagName }) -contains $tag)
 
 if ($releaseExists) {
     Write-Host "Release $tag exists - replacing the artifact"
