@@ -1,0 +1,39 @@
+# --- Build output -----------------------------------------------------------
+# dist/ holds compiled binaries; releases are published as GitHub Release assets,
+# not as tracked files.
+dist/
+bin/
+obj/
+
+# --- Build scratch / diagnostics -------------------------------------------
+out.txt
+err.txt
+startup-diag.log*
+*.tmp
+
+# Scratch note that was superseded by the code in MainWindow.cs.
+ai_patch.txt
+
+# --- User data: never leaves this machine ----------------------------------
+# settings.json carries the AI endpoint and API key; the rest is personal working
+# state. They live in %LOCALAPPDATA%\OutlookAiHelper, and are listed here as a
+# second line of defence in case the app is ever run from the repo folder.
+settings.json
+todos.json
+overrides.json
+*.log
+
+# --- Secrets and certificates ----------------------------------------------
+.env
+*.pfx
+*.key
+*.pem
+*.snk
+
+# --- Editor / OS noise -----------------------------------------------------
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+desktop.ini

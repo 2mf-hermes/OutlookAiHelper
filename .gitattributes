@@ -1,0 +1,4 @@
+# Line endings stay native on Windows; binaries are never touched.
+* text=auto
+*.png binary
+*.ico binary
