@@ -347,13 +347,14 @@ sequenceDiagram
 
 資安邊界（全部集中在 `Core/Security/UpdateSecurityPolicy.cs`，可用單元測試驗證）：
 
-- 僅 HTTPS，且主機須在 GitHub 白名單（`github.com`、`api.github.com`、`objects.githubusercontent.com`）；禁自訂埠、禁網址內帳密，重導後的最終位址需再通過同一檢查。
+- 僅 HTTPS，且主機須在 GitHub 白名單（`github.com`、`api.github.com`、`objects.githubusercontent.com`、`github-releases.githubusercontent.com`、`release-assets.githubusercontent.com`）；主機為精確比對、不做後綴比對（避免 `github.com.evil.example` 這類混淆網域），禁自訂埠、禁網址內帳密，重導後的最終位址需再通過同一檢查。`release-assets.githubusercontent.com` 是實際觀察到下載重導的資產主機；若 GitHub 之後改用別的主機，行為是「拒絕下載」而非信任未知主機（fail closed）。
+- 檢查與下載共用同一個 TLS 進入點（`UpdateHttp.EnsureModernTls`，冪等）：程序預設的 `Ssl3|Tls` 會被 GitHub 的 API 與資產主機拒絕；兩者共用可避免「下載只有在同一程序先做過檢查時才成功」的隱性順序相依。
 - 只接受資產名稱 `OutlookAiHelper.exe`（純檔名、非路徑）、大小上限 200 MiB，且實際位元組數需與 Release 宣告相符。
 - 下載內容需具 Windows 執行檔（MZ）檔頭，不符即刪除暫存檔並中止。
 - 批次腳本中的路徑需通過 `IsSafeForUpdaterScript`（擋 `"`、`%`、`&`、`|` 等 cmd 特殊字元），避免指令注入。
 - 更新路徑只對 GitHub 發出 GET；不送出任何本機資料、API key 或信件內容。
 
-對應檔案：`Core/Models/AppVersion.cs`、`AppInfo.cs`、`ReleaseInfo.cs`、`UpdateOffer.cs`；`Core/Security/UpdateSecurityPolicy.cs`；`Core/Abstractions/IReleaseFeed.cs`；`Core/Application/CheckForUpdateUseCase.cs`；`Adapters/Update/GitHubReleaseFeed.cs`、`UpdateInstaller.cs`；`UI/UpdateSheet.cs`、`UI/MainWindow.Update.cs`；`tests/UpdateTests.cs`；`VERSION`；`release.ps1`（建置 → 標籤 → 發佈產物的發佈腳本）。
+對應檔案：`Core/Models/AppVersion.cs`、`AppInfo.cs`、`ReleaseInfo.cs`、`UpdateOffer.cs`；`Core/Security/UpdateSecurityPolicy.cs`；`Core/Abstractions/IReleaseFeed.cs`；`Core/Application/CheckForUpdateUseCase.cs`；`Adapters/Update/GitHubReleaseFeed.cs`、`UpdateInstaller.cs`、`UpdateHttp.cs`；`UI/UpdateSheet.cs`、`UI/MainWindow.Update.cs`；`tests/UpdateTests.cs`；`VERSION`；`release.ps1`（建置 → 標籤 → 發佈產物的發佈腳本）。
 
 ---
 

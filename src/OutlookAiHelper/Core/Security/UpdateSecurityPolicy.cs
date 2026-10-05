@@ -23,14 +23,21 @@ namespace OutlookAiHelper.Core.Security
 
         /// <summary>
         /// github.com serves the link, then redirects the body to a GitHub asset host.
-        /// Both hops are allowed — nothing else.
+        /// Both hops are allowed — nothing else. Hosts are matched exactly, never by
+        /// suffix, so a lookalike domain can never be reached.
+        ///
+        /// release-assets.githubusercontent.com was added after a real download of our own
+        /// v1.1.0 asset was observed redirecting there; without it the honest link itself
+        /// is refused. A host GitHub stops using therefore fails closed: the download is
+        /// refused rather than some unknown host being trusted.
         /// </summary>
         public static readonly string[] TrustedAssetHosts =
         {
             "github.com",
             "api.github.com",
             "objects.githubusercontent.com",
-            "github-releases.githubusercontent.com"
+            "github-releases.githubusercontent.com",
+            "release-assets.githubusercontent.com"
         };
 
         public static bool IsTrustedApiUrl(string url)

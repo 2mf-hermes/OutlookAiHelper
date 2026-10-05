@@ -42,6 +42,11 @@ namespace OutlookAiHelper.Adapters.Update
 
             try
             {
+                // Must happen here as well: the download may be the first request this
+                // process ever makes, and a fresh process here defaults to Ssl3|Tls,
+                // which the asset host refuses.
+                UpdateHttp.EnsureModernTls();
+
                 var request = (HttpWebRequest)WebRequest.Create(assetUrl);
                 request.Method = "GET";
                 request.UserAgent = "OutlookAiHelper/" + AppInfo.Version;

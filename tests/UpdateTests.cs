@@ -75,6 +75,14 @@ namespace OutlookAiHelper.Tests
                 UpdateSecurityPolicy.IsTrustedAssetUrl(
                     "https://github.com/2mf-hermes/OutlookAiHelper/releases/download/v1.0.1/OutlookAiHelper.exe")
                 && UpdateSecurityPolicy.IsTrustedAssetUrl("https://objects.githubusercontent.com/github-production-release-asset/1/2")
+                // The host github.com actually redirects to today (observed on the v1.1.0
+                // download). Without it the app refuses its own honest release link.
+                && UpdateSecurityPolicy.IsTrustedAssetUrl(
+                    "https://release-assets.githubusercontent.com/github-production-release-asset/1/2?sp=r&sig=x")
+                && !UpdateSecurityPolicy.IsTrustedAssetUrl(
+                    "https://release-assets.githubusercontent.com.evil.example/github-production-release-asset/1/2")
+                && !UpdateSecurityPolicy.IsTrustedAssetUrl(
+                    "https://evil.example/release-assets.githubusercontent.com/x.exe")
                 && !UpdateSecurityPolicy.IsTrustedAssetUrl(
                     "http://github.com/2mf-hermes/OutlookAiHelper/releases/download/v1.0.1/OutlookAiHelper.exe")
                 && !UpdateSecurityPolicy.IsTrustedAssetUrl("https://github.com.evil.example/OutlookAiHelper.exe")
@@ -88,6 +96,17 @@ namespace OutlookAiHelper.Tests
                 && UpdateSecurityPolicy.IsTrustedApiUrl("https://api.github.com/repos/2mf-hermes/OutlookAiHelper/releases/latest")
                 && !UpdateSecurityPolicy.IsTrustedApiUrl("https://api.github.com/user")
                 && !UpdateSecurityPolicy.IsTrustedApiUrl("https://api.github.com.evil.example/repos/a/b/releases/latest"));
+
+            failed += Check("both updater paths opt into modern TLS", () =>
+            {
+                // Reproduces the real failure this pins: a fresh process here defaults to
+                // Ssl3|Tls, which the GitHub API and the asset host both refuse. The check
+                // and the download used to rely on ordering between them; now one shared
+                // helper guarantees it. Idempotent, so calling it here is safe either way.
+                UpdateHttp.EnsureModernTls();
+                return (System.Net.ServicePointManager.SecurityProtocol
+                    & (System.Net.SecurityProtocolType)3072) == (System.Net.SecurityProtocolType)3072;
+            });
 
             failed += Check("only a bare .exe file name may be installed", () =>
                 UpdateSecurityPolicy.IsAllowedAssetName("OutlookAiHelper.exe")

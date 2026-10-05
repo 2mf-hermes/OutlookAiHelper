@@ -21,8 +21,6 @@ namespace OutlookAiHelper.Adapters.Update
     {
         private const int TimeoutMs = 15000;
 
-        private static bool _tlsConfigured;
-
         public ReleaseCheckResult FetchLatest(string owner, string repository)
         {
             if (string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repository))
@@ -36,7 +34,7 @@ namespace OutlookAiHelper.Adapters.Update
                 return ReleaseCheckResult.Failure("update.error.policy");
             }
 
-            EnsureTls12();
+            UpdateHttp.EnsureModernTls();
 
             try
             {
@@ -140,25 +138,6 @@ namespace OutlookAiHelper.Adapters.Update
             {
                 FileLogger.Error("UpdateCheck.Parse", ex);
                 return null;
-            }
-        }
-
-        /// <summary>.NET 4.0 defaults to SSL3/TLS1.0, which api.github.com refuses.</summary>
-        private static void EnsureTls12()
-        {
-            if (_tlsConfigured)
-            {
-                return;
-            }
-
-            _tlsConfigured = true;
-            try
-            {
-                ServicePointManager.SecurityProtocol =
-                    ServicePointManager.SecurityProtocol | (SecurityProtocolType)3072; // Tls12
-            }
-            catch (Exception)
-            {
             }
         }
 
