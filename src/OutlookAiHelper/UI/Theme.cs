@@ -55,9 +55,38 @@ namespace OutlookAiHelper.UI
             get { return new SolidColorBrush(Accent); }
         }
 
+        public static Brush DangerBrush
+        {
+            get { return new SolidColorBrush(Danger); }
+        }
+
+        /// <summary>Long-waiting (but not yet overdue) follow-ups.</summary>
+        public static Brush WarningBrush
+        {
+            get { return new SolidColorBrush(Gold); }
+        }
+
+        /// <summary>Soft rose wash marking a follow-up row that is past its due date.</summary>
+        public static Brush OverdueRowBrush
+        {
+            get { return new SolidColorBrush(Color.FromArgb(0x1C, Danger.R, Danger.G, Danger.B)); }
+        }
+
+        /// <summary>Accent wash behind the sidebar's unfinished-count badge.</summary>
+        public static Brush BadgeTintBrush
+        {
+            get { return new SolidColorBrush(Color.FromArgb(0x2E, Accent.R, Accent.G, Accent.B)); }
+        }
+
         public static Brush SurfaceBrush
         {
             get { return new SolidColorBrush(Card); }
+        }
+
+        /// <summary>Soft accent wash for the row the right-hand panel is showing.</summary>
+        public static Brush RowSelectedBrush
+        {
+            get { return new SolidColorBrush(Color.FromArgb(0x24, Accent.R, Accent.G, Accent.B)); }
         }
 
         public static Brush QuadrantBrush(Core.Classification.Quadrant q)

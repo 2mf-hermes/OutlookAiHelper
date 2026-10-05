@@ -1058,6 +1058,49 @@ namespace OutlookAiHelper.UI
             return canvas;
         }
 
+        /// <summary>
+        /// macOS sidebar gear glyph (settings). Drawn as geometry so it stays crisp
+        /// at small sizes and needs no icon font. The caller owns the colour: the
+        /// sidebar restyles Fill when the settings page is selected.
+        /// </summary>
+        public static System.Windows.Shapes.Path GearGlyph(double size = 16, Brush brush = null)
+        {
+            var centre = size / 2.0;
+            var bandOuter = size * 0.30;
+            var bandInner = size * 0.115;
+            var toothOuter = size * 0.475;
+            var toothInner = size * 0.22;
+            var toothWidth = size * 0.16;
+
+            var group = new GeometryGroup { FillRule = FillRule.Nonzero };
+            // Hub: an excluded ring, so the teeth can merge into it without notches.
+            group.Children.Add(new CombinedGeometry(
+                GeometryCombineMode.Exclude,
+                new EllipseGeometry(new Point(centre, centre), bandOuter, bandOuter),
+                new EllipseGeometry(new Point(centre, centre), bandInner, bandInner)));
+
+            for (var i = 0; i < 8; i++)
+            {
+                var tooth = new RectangleGeometry(
+                    new Rect(centre - (toothWidth / 2.0), centre - toothOuter, toothWidth, toothOuter - toothInner),
+                    size * 0.04,
+                    size * 0.04);
+                tooth.Transform = new RotateTransform(i * 45.0, centre, centre);
+                group.Children.Add(tooth);
+            }
+
+            return new System.Windows.Shapes.Path
+            {
+                Data = group,
+                Fill = brush ?? Theme.InkBrush,
+                Width = size,
+                Height = size,
+                Stretch = Stretch.None,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+
         public static TextBlock Caption(string text)
         {
             return new TextBlock

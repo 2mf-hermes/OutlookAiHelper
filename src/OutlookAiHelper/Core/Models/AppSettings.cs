@@ -6,11 +6,21 @@ namespace OutlookAiHelper.Core.Models
 {
     public sealed class AppSettings
     {
+        /// <summary>
+        /// Minutes between lightweight "any new mail?" probes. A full rescan only follows
+        /// a probe that saw a change, so the timer itself is nearly free.
+        /// </summary>
+        public const int DefaultAutoRefreshMinutes = 2;
+
+        /// <summary>Longest probe interval the settings UI offers.</summary>
+        public const int MaxAutoRefreshMinutes = 30;
+
         public AppSettings()
         {
             SchemaVersion = 1;
             Language = "zh-TW";
             ScanDays = 30;
+            AutoRefreshMinutes = DefaultAutoRefreshMinutes;
             FolderPath = "Inbox";
             VipAddresses = new List<string>();
             UrgentKeywords = new List<string>();
@@ -43,6 +53,13 @@ namespace OutlookAiHelper.Core.Models
         /// deserializes to false, which is the same answer.
         /// </summary>
         public bool CheckForUpdatesOnStartup { get; set; }
+
+        /// <summary>
+        /// Minutes between inbox probes for the automatic refresh; 0 switches it off.
+        /// Only reading the head of the Inbox counts as "activity", so this costs far
+        /// less than the periodic full rescan it replaces.
+        /// </summary>
+        public int AutoRefreshMinutes { get; set; }
 
         public AiProviderProfile GetSelectedProvider()
         {

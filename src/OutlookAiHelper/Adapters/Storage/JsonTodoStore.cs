@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
@@ -47,6 +48,14 @@ namespace OutlookAiHelper.Adapters.Storage
 
         [DataMember(Order = 9)]
         public string DueOn { get; set; }
+
+        [DataMember(Order = 10)]
+        public string SourceFrom { get; set; }
+
+        // Stored as a round-trip UTC timestamp. Absent in files written before this
+        // field existed, which deserializes to null and falls back to CreatedOn.
+        [DataMember(Order = 11)]
+        public string SourceReceivedOn { get; set; }
     }
 
     public sealed class JsonTodoStore : ITodoStore
@@ -146,7 +155,11 @@ namespace OutlookAiHelper.Adapters.Storage
                 Status = status,
                 CreatedOn = ParseDate(record.CreatedOn),
                 UpdatedOn = ParseDate(record.UpdatedOn),
-                DueOn = string.IsNullOrEmpty(record.DueOn) ? (DateTime?)null : ParseDate(record.DueOn)
+                DueOn = string.IsNullOrEmpty(record.DueOn) ? (DateTime?)null : ParseDate(record.DueOn),
+                SourceFrom = record.SourceFrom,
+                SourceReceivedOn = string.IsNullOrEmpty(record.SourceReceivedOn)
+                    ? (DateTime?)null
+                    : ParseDate(record.SourceReceivedOn)
             };
         }
 
@@ -162,14 +175,22 @@ namespace OutlookAiHelper.Adapters.Storage
                 Status = item.Status == TodoStatus.Done ? "Done" : "Open",
                 CreatedOn = item.CreatedOn.ToString("o"),
                 UpdatedOn = item.UpdatedOn.ToString("o"),
-                DueOn = item.DueOn.HasValue ? item.DueOn.Value.ToString("o") : null
+                DueOn = item.DueOn.HasValue ? item.DueOn.Value.ToString("o") : null,
+                SourceFrom = item.SourceFrom,
+                SourceReceivedOn = item.SourceReceivedOn.HasValue
+                    ? item.SourceReceivedOn.Value.ToString("o")
+                    : null
             };
         }
 
         private static DateTime ParseDate(string value)
         {
             DateTime parsed;
-            if (!string.IsNullOrEmpty(value) && DateTime.TryParse(value, out parsed))
+            // RoundtripKind keeps the stored UTC instant intact. Plain TryParse would
+            // shift a "…Z" value into local time, which silently makes the overdue and
+            // "waiting N days" comparisons wrong by the timezone offset.
+            if (!string.IsNullOrEmpty(value)
+                && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out parsed))
             {
                 return parsed;
             }

@@ -14,6 +14,17 @@ namespace OutlookAiHelper.Adapters.Outlook
     public sealed class OutlookComMailReader : IMailReader
     {
         private const int MaxItems = 2000;
+
+        /// <summary>Outlook OlDefaultFolders.olFolderInbox.</summary>
+        private const int OlFolderInbox = 6;
+
+        /// <summary>
+        /// How many items at the head of an Inbox the auto-refresh probe looks at when it
+        /// picks the newest one. Small on purpose: the probe must stay far cheaper than a
+        /// scan, and Outlook hands a default Inbox back newest-first.
+        /// </summary>
+        private const int ProbeHeadSample = 10;
+
         private object _application;
         private bool _attached;
 
@@ -156,10 +167,12 @@ namespace OutlookAiHelper.Adapters.Outlook
             {
                 ns = Invoke(_application, "GetNamespace", "MAPI");
                 var cutoff = DateTime.Now.AddDays(-Math.Max(1, scope == null ? 30 : scope.Days));
-                // Deleted mail is out of scope: collect each store's Deleted Items EntryID
-                // so the walk can prune it (and its subfolders) even when it was renamed.
+                // Deleted and junk mail are out of scope: collect each store's default
+                // Deleted Items / Junk E-mail EntryIDs so the walk can prune them (and
+                // their subfolders) even when the folders were renamed.
                 var excludedFolderIds = new List<string>();
                 AddDefaultFolderId(ns, ScanFolderFilter.OlFolderDeletedItems, excludedFolderIds);
+                AddDefaultFolderId(ns, ScanFolderFilter.OlFolderJunk, excludedFolderIds);
                 var folders = new List<object>();
                 CollectFolders(ns, folders, excludedFolderIds);
                 if (folders.Count == 0)
@@ -167,7 +180,7 @@ namespace OutlookAiHelper.Adapters.Outlook
                     AddFallbackFolders(ns, folders);
                 }
                 FileLogger.Info("Scan folders=" + folders.Count + " days=" + (scope != null ? scope.Days : 0)
-                    + " deletedFoldersExcluded=" + excludedFolderIds.Count);
+                    + " excludedFolders=" + excludedFolderIds.Count + " (deleted items + junk e-mail)");
 
                 var mapped = 0;
                 foreach (var folder in folders)
@@ -219,7 +232,7 @@ namespace OutlookAiHelper.Adapters.Outlook
         {
             try
             {
-                var inbox = Invoke(ns, "GetDefaultFolder", 6);
+                var inbox = Invoke(ns, "GetDefaultFolder", OlFolderInbox);
                 if (inbox != null)
                 {
                     folders.Add(inbox);
@@ -268,8 +281,9 @@ namespace OutlookAiHelper.Adapters.Outlook
                         store = Invoke(stores, "Item", i);
                         var name = ToText(Invoke(store, "Name")) ?? ("store" + i);
                         FileLogger.Info("Walk store " + name);
-                        // Archive PSTs keep their own Deleted Items folder.
+                        // Archive PSTs keep their own Deleted Items and Junk E-mail folders.
                         AddDefaultFolderId(store, ScanFolderFilter.OlFolderDeletedItems, excludedFolderIds);
+                        AddDefaultFolderId(store, ScanFolderFilter.OlFolderJunk, excludedFolderIds);
                         AddFolderRecursive(store, folders, 0, name, excludedFolderIds);
                     }
                     catch (Exception ex)
@@ -298,7 +312,7 @@ namespace OutlookAiHelper.Adapters.Outlook
             {
                 try
                 {
-                    var inbox = Invoke(ns, "GetDefaultFolder", 6);
+                    var inbox = Invoke(ns, "GetDefaultFolder", OlFolderInbox);
                     if (inbox != null)
                     {
                         folders.Add(inbox);
@@ -333,7 +347,7 @@ namespace OutlookAiHelper.Adapters.Outlook
 
             var name = ToText(Invoke(folder, "Name")) ?? "";
 
-            // Deleted mail is not scanned: skip the folder and its whole subtree.
+            // Deleted and junk mail are not scanned: skip the folder and its whole subtree.
             if (IsExcludedFolder(folder, name, excludedFolderIds))
             {
                 FileLogger.Info("Folder- (deleted, skipped) " + path);
@@ -593,7 +607,7 @@ namespace OutlookAiHelper.Adapters.Outlook
                 return false;
             }
 
-            if (ScanFolderFilter.IsDeletedFolderName(name))
+            if (ScanFolderFilter.IsExcludedFolderName(name))
             {
                 return true;
             }
@@ -613,6 +627,158 @@ namespace OutlookAiHelper.Adapters.Outlook
             }
 
             return ScanFolderFilter.IsExcluded(name, entryId, excludedFolderIds);
+        }
+
+        /// <summary>
+        /// Cheap "is there anything new?" probe for the auto-refresh timer: reads the head
+        /// of each store's Inbox instead of walking every folder, so it costs a fraction of
+        /// a scan. Returns null when Outlook is not reachable, which means "unknown" — the
+        /// caller must skip the tick rather than conclude nothing changed.
+        ///
+        /// Deliberately read-only: the folder view is never sorted or re-filtered (that
+        /// would reorder what the user sees in Outlook), so the newest item is taken as the
+        /// newest ReceivedTime among the first few items the view already hands back.
+        /// Call only from an STA thread (see ComSta).
+        /// </summary>
+        public InboxProbe ProbeInbox()
+        {
+            string reason;
+            if (!IsAvailable(out reason))
+            {
+                return null;
+            }
+
+            var fragments = new List<string>();
+            var unread = 0;
+            var inboxes = 0;
+            object ns = null;
+            object stores = null;
+            try
+            {
+                ns = Invoke(_application, "GetNamespace", "MAPI");
+                stores = Invoke(ns, "Folders");
+                var storeCount = ToInt(Invoke(stores, "Count"));
+                for (var i = 1; i <= storeCount; i++)
+                {
+                    object store = null;
+                    object inbox = null;
+                    try
+                    {
+                        store = Invoke(stores, "Item", i);
+                        inbox = Invoke(store, "GetDefaultFolder", OlFolderInbox);
+                        if (inbox == null)
+                        {
+                            continue;
+                        }
+
+                        inboxes++;
+                        var unreadHere = Math.Max(0, InboxUnreadCount(inbox));
+                        unread += unreadHere;
+                        fragments.Add(InboxHeadFragment(inbox, unreadHere));
+                    }
+                    catch (Exception ex)
+                    {
+                        FileLogger.Info("Inbox probe skipped a store: " + ex.Message);
+                    }
+                    finally
+                    {
+                        OutlookAvailability.Release(inbox);
+                        OutlookAvailability.Release(store);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Error("ProbeInbox", ex);
+                return null;
+            }
+            finally
+            {
+                OutlookAvailability.Release(stores);
+                OutlookAvailability.Release(ns);
+            }
+
+            var probe = new InboxProbe
+            {
+                Signature = string.Join(";", fragments.ToArray()),
+                UnreadCount = unread,
+                InboxCount = inboxes
+            };
+            FileLogger.Info("Inbox probe inboxes=" + inboxes + " unread=" + unread + " usable=" + probe.IsUsable);
+            return probe;
+        }
+
+        /// <summary>
+        /// Signature fragment for one Inbox: its newest item plus its unread count.
+        /// "empty" is a stable value, so an empty Inbox must not look like a change on
+        /// every tick (that would turn the probe into a rescan loop).
+        /// </summary>
+        private static string InboxHeadFragment(object inbox, int unreadCount)
+        {
+            var unreadPart = Math.Max(0, unreadCount).ToString();
+            object items = null;
+            try
+            {
+                items = Invoke(inbox, "Items");
+                var count = ToInt(Invoke(items, "Count"));
+                var sample = count < ProbeHeadSample ? count : ProbeHeadSample;
+                var bestId = string.Empty;
+                var bestReceived = DateTime.MinValue;
+                for (var i = 1; i <= sample; i++)
+                {
+                    object item = null;
+                    try
+                    {
+                        item = Invoke(items, "Item", i);
+                        var received = ToDate(Invoke(item, "ReceivedTime"), DateTime.MinValue);
+                        if (bestReceived == DateTime.MinValue || received > bestReceived)
+                        {
+                            bestReceived = received;
+                            bestId = ToText(Invoke(item, "EntryID")) ?? string.Empty;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    finally
+                    {
+                        OutlookAvailability.Release(item);
+                    }
+                }
+
+                var head = string.IsNullOrEmpty(bestId) ? "empty" : InboxProbe.MakeFragment(bestId, bestReceived);
+                return head + "#" + unreadPart;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Info("Inbox head unreadable: " + ex.Message);
+                return "unknown#" + unreadPart;
+            }
+            finally
+            {
+                OutlookAvailability.Release(items);
+            }
+        }
+
+        /// <summary>Unread items in a folder. Outlook spells the property UnReadItemCount.</summary>
+        private static int InboxUnreadCount(object folder)
+        {
+            try
+            {
+                return ToInt(Invoke(folder, "UnReadItemCount"));
+            }
+            catch (Exception)
+            {
+            }
+
+            try
+            {
+                return ToInt(Invoke(folder, "UnreadItemCount"));
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
         }
 
         private static string NormalizeAddress(string value)

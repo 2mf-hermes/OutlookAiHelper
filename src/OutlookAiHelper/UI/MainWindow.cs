@@ -132,6 +132,8 @@ namespace OutlookAiHelper.UI
             RefreshAiProviderCombo();
             ShowEmpty();
             ShowPage("quadrants");
+            ConfigureAutoRefresh();
+            UpdateTodoBadge();
             Loaded += async (s, e) =>
             {
                 if (_autoScanDone)
@@ -244,6 +246,9 @@ namespace OutlookAiHelper.UI
             }
 
             _selected = null;
+            _detailEntryId = null;
+            _detailTodoId = null;
+            HighlightTodoRows();
             UpdatePanelWidths();
         }
 
@@ -361,6 +366,8 @@ namespace OutlookAiHelper.UI
                 StyleNav(_navTodo, page == "todo");
             }
 
+            ApplyNavBadgeStyle(page == "todo");
+
             if (_navSettings != null)
             {
                 StyleNav(_navSettings, page == "settings");
@@ -402,12 +409,27 @@ namespace OutlookAiHelper.UI
                 button.Template = UiKit.TintedGlassPillTemplate();
             }
 
+            // Icon-only entries (the settings gear) paint with geometry, so the glyph
+            // has to follow the colour the pill template would have applied to text.
+            var glyph = button.Content as System.Windows.Shapes.Shape;
+            if (glyph != null)
+            {
+                glyph.Fill = button.Foreground;
+            }
+
             button.Opacity = 1.0;
         }
 
         private UIElement BuildNav()
         {
-            // Floating sidebar (Liquid Glass navigation layer)
+            // Floating sidebar (Liquid Glass navigation layer). A three-row grid keeps
+            // the read-only note and the settings button parked at the bottom edge of
+            // the panel, however tall the window is.
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
             var stack = new StackPanel { Margin = new Thickness(2, 10, 2, 10) };
             stack.Children.Add(new TextBlock
             {
@@ -420,28 +442,64 @@ namespace OutlookAiHelper.UI
             });
             _navQuadrants = NavButton(Strings.T("nav.quadrants"), true, () => ShowPage("quadrants"));
             stack.Children.Add(_navQuadrants);
-            _navTodo = NavButton(Strings.T("nav.todo"), false, () => ShowPage("todo"));
+            _navTodo = NavButton(BuildNavTodoContent(), false, () => ShowPage("todo"));
             stack.Children.Add(_navTodo);
-            _navSettings = NavButton(Strings.T("nav.settings"), false, () => ShowPage("settings"));
-            stack.Children.Add(_navSettings);
-            stack.Children.Add(new TextBlock
+            Grid.SetRow(stack, 0);
+            grid.Children.Add(stack);
+
+            var footer = new StackPanel { Margin = new Thickness(2, 0, 2, 10) };
+            footer.Children.Add(new TextBlock
             {
                 Text = Strings.T("status.readonly"),
                 FontSize = UiKit.TypeCaption,
                 FontWeight = FontWeights.Medium,
                 Foreground = Theme.MutedBrush,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(6, 28, 6, 0)
+                Margin = new Thickness(6, 0, 6, 10)
             });
+            _navSettings = NavIconButton(UiKit.GearGlyph(), Strings.T("nav.settings"), () => ShowPage("settings"));
+            footer.Children.Add(_navSettings);
+            Grid.SetRow(footer, 2);
+            grid.Children.Add(footer);
 
-            return UiKit.GlassPlate(stack, UiKit.RadiusSheet, new Thickness(14, 18, 14, 18));
+            return UiKit.GlassPlate(grid, UiKit.RadiusSheet, new Thickness(14, 18, 14, 18));
         }
 
-        private Button NavButton(string text, bool selected, Action onClick)
+        /// <summary>Icon-only sidebar entry (settings gear). The label lives in the tooltip.</summary>
+        private Button NavIconButton(UIElement glyph, string tooltip, Action onClick)
         {
             var button = new Button
             {
-                Content = text,
+                Content = glyph,
+                Height = 38,
+                Margin = new Thickness(0),
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                BorderThickness = new Thickness(0),
+                Cursor = Cursors.Hand,
+                ToolTip = tooltip,
+                Foreground = Theme.InkBrush,
+                Template = UiKit.TintedGlassPillTemplate()
+            };
+            button.Click += (s, e) =>
+            {
+                try
+                {
+                    onClick();
+                }
+                catch (Exception ex)
+                {
+                    Adapters.Logging.FileLogger.Error("NavClick", ex);
+                }
+            };
+            return button;
+        }
+
+        private Button NavButton(object content, bool selected, Action onClick)
+        {
+            var button = new Button
+            {
+                Content = content,
                 Height = 38,
                 Margin = new Thickness(0, 0, 0, 8),
                 HorizontalContentAlignment = HorizontalAlignment.Center,
@@ -711,6 +769,8 @@ namespace OutlookAiHelper.UI
             stack.Children.Add(_detailMeta);
             stack.Children.Add(UiKit.Subtitle(Strings.T("reason.title")));
             stack.Children.Add(_reasonPanel);
+            _todoActions = BuildTodoActionsPanel();
+            stack.Children.Add(_todoActions);
             stack.Children.Add(_openOutlookButton);
             stack.Children.Add(_reclassifyButton);
             stack.Children.Add(_addTodoButton);
@@ -777,6 +837,7 @@ namespace OutlookAiHelper.UI
                 BindTodos();
             };
             tools.Children.Add(_todoFilter);
+            tools.Children.Add(BuildTodoToolsRow());
             grid.Children.Add(tools);
             Grid.SetRow(tools, 1);
 
@@ -814,7 +875,7 @@ namespace OutlookAiHelper.UI
             panel.Children.Add(UiKit.Caption(Strings.T("settings.days")));
             _settingsDays = UiKit.Input((_settings != null ? _settings.ScanDays : 30).ToString());
             panel.Children.Add(_settingsDays);
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.excludeDeleted")));
+            panel.Children.Add(UiKit.Caption(Strings.T("settings.scanScope")));
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.language")));
             _settingsLanguage = UiKit.Select();
@@ -837,6 +898,21 @@ namespace OutlookAiHelper.UI
 
             _settingsLanguage.SelectedIndex = langIndex;
             panel.Children.Add(_settingsLanguage);
+
+            panel.Children.Add(UiKit.Caption(Strings.T("settings.autoRefresh")));
+            _autoRefreshBox = UiKit.Select();
+            _autoRefreshBox.Width = 180;
+            foreach (var minutes in AutoRefreshChoices)
+            {
+                _autoRefreshBox.Items.Add(minutes == 0
+                    ? Strings.T("settings.autoRefresh.off")
+                    : string.Format(Strings.T("settings.autoRefresh.minutes"), minutes));
+            }
+
+            _autoRefreshBox.SelectedIndex = AutoRefreshChoiceIndex(_settings != null
+                ? _settings.AutoRefreshMinutes
+                : AppSettings.DefaultAutoRefreshMinutes);
+            panel.Children.Add(_autoRefreshBox);
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.urgentKeywords")));
             _settingsUrgent = UiKit.Input(JoinKeywords(_settings != null ? _settings.UrgentKeywords : RuleOptions.DefaultUrgentKeywords()));
@@ -1002,14 +1078,17 @@ namespace OutlookAiHelper.UI
             }
 
             _todoList.Items.Clear();
-            var items = _todos.Items
-                .Where(t =>
+            var filtered = _todos.Items.Where(t =>
+                t != null &&
+                (
                     _todoFilterMode == "All"
                     || (_todoFilterMode == "Done" && t.Status == TodoStatus.Done)
-                    || (_todoFilterMode == "Open" && t.Status == TodoStatus.Open))
-                .OrderBy(t => t.Status == TodoStatus.Done)
-                .ThenByDescending(t => t.UpdatedOn)
-                .ToList();
+                    || (_todoFilterMode == "Open" && t.Status == TodoStatus.Open)
+                ));
+
+            // Ordering lives in Core/Models/TodoOrdering so "what has been waiting longest"
+            // is testable without Outlook or a window; Manual is the stored order.
+            var items = TodoOrdering.Sort(filtered, _todoSortMode, DateTime.UtcNow);
 
             foreach (var item in items)
             {
@@ -1019,11 +1098,26 @@ namespace OutlookAiHelper.UI
             var empty = items.Count == 0;
             _todoEmpty.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
             _todoList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+            UpdateTodoBadge();
         }
 
         private UIElement BuildTodoRow(TodoItem item)
         {
-            var grid = new Grid { Tag = item, MinHeight = 56, Background = Brushes.Transparent };
+            var now = DateTime.UtcNow;
+            // The row the detail panel is showing keeps a soft accent wash.
+            var showing = !string.IsNullOrEmpty(_detailTodoId) && item.Id == _detailTodoId;
+            // A previewed row wins over the overdue wash, so the panel's row is always
+            // the one that stands out.
+            var background = showing
+                ? Theme.RowSelectedBrush
+                : (item.IsOverdue(now) ? Theme.OverdueRowBrush : Brushes.Transparent);
+            var grid = new Grid
+            {
+                Tag = item,
+                MinHeight = 56,
+                Background = background,
+                Cursor = Cursors.Hand
+            };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1081,6 +1175,21 @@ namespace OutlookAiHelper.UI
                 });
             }
 
+            // Waiting / overdue sits under the source line, in the colour that says how
+            // urgent it is: amber once it has waited a week, red once the due date passed.
+            var status = WaitingStatusText(item, now);
+            if (!string.IsNullOrEmpty(status))
+            {
+                text.Children.Add(new TextBlock
+                {
+                    Text = status,
+                    FontSize = UiKit.TypeCaption,
+                    FontWeight = FontWeights.Medium,
+                    Foreground = WaitingStatusBrush(item, now),
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+            }
+
             Grid.SetColumn(text, 1);
             grid.Children.Add(text);
 
@@ -1093,6 +1202,18 @@ namespace OutlookAiHelper.UI
             del.MinWidth = 72;
             Grid.SetColumn(del, 2);
             grid.Children.Add(del);
+
+            // Clicking the row itself (not its check box or delete button) previews the
+            // mail behind the follow-up in the right-hand panel.
+            grid.MouseLeftButtonUp += (s, e) =>
+            {
+                if (IsFromInteractiveChild(e.OriginalSource as DependencyObject))
+                {
+                    return;
+                }
+
+                ShowTodoDetail(item);
+            };
             return grid;
         }
 
@@ -1370,7 +1491,14 @@ namespace OutlookAiHelper.UI
 
         private void OnMailSelectedDetailCore(ScanResultItem item)
         {
+            // Selecting a plain mail turns the follow-up block off again; ShowTodoDetail
+            // re-renders it right after this call.
+            SetTodoActionsVisible(false);
             _selected = item;
+            if (item != null)
+            {
+                _detailEntryId = null;
+            }
             if (_detailHost != null)
             {
                 _detailHost.Visibility = item == null ? Visibility.Collapsed : Visibility.Visible;
@@ -1431,6 +1559,8 @@ namespace OutlookAiHelper.UI
 
         private void OnMailSelected()
         {
+            _detailTodoId = null;
+            _detailEntryId = null;
             var row = _mailList.SelectedItem as Grid;
             var picked = row == null ? (_lastPicked) : row.Tag as ScanResultItem;
             if (picked == null)
@@ -1472,6 +1602,7 @@ namespace OutlookAiHelper.UI
             }
 
             _cancel = new CancellationTokenSourceLike();
+            _scanRunning = true;
             _scanButton.IsEnabled = false;
             _cancelButton.IsEnabled = true;
             _progress.Visibility = Visibility.Visible;
@@ -1522,6 +1653,12 @@ namespace OutlookAiHelper.UI
             _scanButton.IsEnabled = true;
             _cancelButton.IsEnabled = false;
             _progress.Visibility = Visibility.Collapsed;
+            _scanRunning = false;
+
+            // Record what the list now corresponds to. This runs before the branches below
+            // so that a failed scan cannot leave the probe comparing against a stale
+            // fingerprint and rescanning on every tick.
+            await CaptureInboxSignatureAsync();
 
             if (failure != null)
             {
@@ -1592,12 +1729,16 @@ namespace OutlookAiHelper.UI
         {
             try
             {
-                if (_selected == null || string.IsNullOrEmpty(_selected.Mail.EntryId))
+                // A follow-up shown without its scanned mail still knows its entry id.
+                var entryId = _selected != null && !string.IsNullOrEmpty(_selected.Mail.EntryId)
+                    ? _selected.Mail.EntryId
+                    : _detailEntryId;
+                if (string.IsNullOrEmpty(entryId))
                 {
                     return;
                 }
 
-                var ok = _reader.TryOpenInOutlook(_selected.Mail.EntryId);
+                var ok = _reader.TryOpenInOutlook(entryId);
                 if (!ok)
                 {
                     if (_statusText != null)
@@ -1962,6 +2103,7 @@ namespace OutlookAiHelper.UI
             _settings.AiModel = selectedP != null ? selectedP.Model : string.Empty;
             _settings.AiApiKey = selectedP != null ? selectedP.ApiKey : string.Empty;
             _settings.CheckForUpdatesOnStartup = _updateAutoCheck != null && _updateAutoCheck.IsChecked == true;
+            _settings.AutoRefreshMinutes = SelectedAutoRefreshMinutes();
             var langIndex = _settingsLanguage != null ? _settingsLanguage.SelectedIndex : 0;
             _settings.Language = langIndex == 1 ? "zh-CN" : (langIndex == 2 ? "en-US" : "zh-TW");
 
@@ -1977,6 +2119,7 @@ namespace OutlookAiHelper.UI
 
             _settingsStore.Save(_settings);
             SyncRulesFromSettings(_settings);
+            ConfigureAutoRefresh();
             Strings.Language = _settings.ToUiLanguage();
             ApplySettingsToToolbar();
             RefreshAiProviderCombo();

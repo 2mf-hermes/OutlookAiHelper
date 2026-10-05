@@ -12,6 +12,7 @@ namespace OutlookAiHelper.TestHost
             failed += TodoStoreTests.Run();
             failed += SettingsPrivacyTests.Run();
             failed += ScanScopeTests.Run();
+            failed += AutoRefreshTests.Run();
             failed += UpdateTests.Run();
             if (failed == 0)
             {

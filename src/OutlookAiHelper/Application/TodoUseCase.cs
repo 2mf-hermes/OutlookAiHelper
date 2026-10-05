@@ -42,7 +42,7 @@ namespace OutlookAiHelper.Application
             }
 
             var title = string.IsNullOrEmpty(mail.Subject) ? (mail.FromName ?? "Untitled") : mail.Subject;
-            var item = TodoItem.Create(title, mail.EntryId, quadrantHint);
+            var item = TodoItem.Create(title, mail.EntryId, quadrantHint, SenderOf(mail), ToUtc(mail.ReceivedOn));
             _items.Insert(0, item);
             Persist();
             return item;
@@ -87,6 +87,39 @@ namespace OutlookAiHelper.Application
             Persist();
         }
 
+        /// <summary>
+        /// Sets the due instant, or clears it when <paramref name="dueOn"/> is null.
+        /// The caller passes UTC (the UI converts the picked local day's end), so the
+        /// overdue test is a plain comparison against DateTime.UtcNow.
+        /// </summary>
+        public void SetDue(string id, DateTime? dueOn)
+        {
+            var item = Find(id);
+            if (item == null)
+            {
+                return;
+            }
+
+            item.DueOn = dueOn;
+            item.UpdatedOn = DateTime.UtcNow;
+            Persist();
+        }
+
+        /// <summary>
+        /// Drops every finished follow-up in one pass. Returns how many were removed so
+        /// the caller can report "已清除 N 筆" instead of silently emptying the list.
+        /// </summary>
+        public int ClearDone()
+        {
+            var removed = _items.RemoveAll(i => i != null && i.Status == TodoStatus.Done);
+            if (removed > 0)
+            {
+                Persist();
+            }
+
+            return removed;
+        }
+
         public void Remove(string id)
         {
             var item = Find(id);
@@ -97,6 +130,36 @@ namespace OutlookAiHelper.Application
 
             _items.Remove(item);
             Persist();
+        }
+
+        private static string SenderOf(MailSummary mail)
+        {
+            if (mail == null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrEmpty(mail.FromName))
+            {
+                return mail.FromName;
+            }
+
+            return mail.FromAddress;
+        }
+
+        /// <summary>
+        /// Converts Outlook's ReceivedTime to a UTC instant. Outlook reports local time
+        /// with an unspecified Kind, so an unspecified value is read as local — the same
+        /// interpretation the mail list itself uses when it prints the timestamp.
+        /// </summary>
+        private static DateTime? ToUtc(DateTime value)
+        {
+            if (value == default(DateTime))
+            {
+                return null;
+            }
+
+            return value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
         }
 
         private TodoItem Find(string id)

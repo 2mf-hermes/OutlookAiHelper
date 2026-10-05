@@ -49,6 +49,19 @@ namespace OutlookAiHelper.Adapters.Storage
 
         [DataMember(Order = 13)]
         public string SelectedAiProviderId { get; set; }
+
+        /// <summary>Opt-in update check. Absent in older files, which reads as false.</summary>
+        [DataMember(Order = 14)]
+        public bool CheckForUpdatesOnStartup { get; set; }
+
+        /// <summary>
+        /// Inbox probe interval in minutes. Nullable so that "field absent" (an older
+        /// settings file) can be told apart from the user's explicit 0 = off; an int
+        /// would collapse both to zero and silently disable the feature for everyone
+        /// who upgrades.
+        /// </summary>
+        [DataMember(Order = 15)]
+        public int? AutoRefreshMinutes { get; set; }
     }
 
     [DataContract]
@@ -122,7 +135,9 @@ namespace OutlookAiHelper.Adapters.Storage
                         AiModel = doc.AiModel ?? string.Empty,
                         AiApiKey = doc.AiApiKey ?? string.Empty,
                         AiProviders = FromProviderRecords(doc.AiProviders),
-                        SelectedAiProviderId = doc.SelectedAiProviderId ?? string.Empty
+                        SelectedAiProviderId = doc.SelectedAiProviderId ?? string.Empty,
+                        CheckForUpdatesOnStartup = doc.CheckForUpdatesOnStartup,
+                        AutoRefreshMinutes = NormalizeAutoRefreshMinutes(doc.AutoRefreshMinutes)
                     };
                 }
             }
@@ -155,13 +170,37 @@ namespace OutlookAiHelper.Adapters.Storage
                 AiModel = settings.AiModel ?? string.Empty,
                 AiApiKey = settings.AiApiKey ?? string.Empty,
                 AiProviders = ToProviderRecords(settings.AiProviders),
-                SelectedAiProviderId = settings.SelectedAiProviderId ?? string.Empty
+                SelectedAiProviderId = settings.SelectedAiProviderId ?? string.Empty,
+                CheckForUpdatesOnStartup = settings.CheckForUpdatesOnStartup,
+                AutoRefreshMinutes = NormalizeAutoRefreshMinutes(settings.AutoRefreshMinutes)
             };
 
             using (var stream = File.Create(_path))
             {
                 new DataContractJsonSerializer(typeof(SettingsDocument)).WriteObject(stream, doc);
             }
+        }
+
+        /// <summary>
+        /// Applies the probe-interval rules in one place: a missing field keeps the app
+        /// default (2 minutes), and anything outside 0..30 — including a hand-edited file
+        /// — falls back to the default rather than to "off", so a corrupt value cannot
+        /// quietly switch the feature off.
+        /// </summary>
+        private static int NormalizeAutoRefreshMinutes(int? value)
+        {
+            if (!value.HasValue)
+            {
+                return AppSettings.DefaultAutoRefreshMinutes;
+            }
+
+            var minutes = value.Value;
+            if (minutes < 0 || minutes > AppSettings.MaxAutoRefreshMinutes)
+            {
+                return AppSettings.DefaultAutoRefreshMinutes;
+            }
+
+            return minutes;
         }
 
         private static List<AiProviderProfile> FromProviderRecords(List<ProviderRecord> records)

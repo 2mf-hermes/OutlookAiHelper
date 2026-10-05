@@ -1,0 +1,41 @@
+name: build
+
+# The app targets .NET Framework + Outlook COM, so the build only needs the managed
+# compiler and the test runner the repository already ships with (build.ps1).
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the test suite
+        shell: powershell
+        run: .\build.ps1
+
+      - name: Check that the version stamp reached the binary
+        shell: powershell
+        run: |
+          $version = (Get-Content .\VERSION -Raw).Trim()
+          Write-Host "VERSION = $version"
+          if (-not (Test-Path ".\dist\OutlookAiHelper.exe")) {
+            throw "build.ps1 did not produce dist\OutlookAiHelper.exe"
+          }
+          $info = (Get-Item ".\dist\OutlookAiHelper.exe").VersionInfo
+          Write-Host "exe      = $($info.FileVersion) / $($info.ProductVersion)"
+          if ($info.FileVersion -notlike "$version*") {
+            throw "the binary does not carry the VERSION stamp ($version)"
+          }
+
+      - name: Upload the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: OutlookAiHelper-${{ github.sha }}
+          path: dist/OutlookAiHelper.exe
+          if-no-files-found: error
