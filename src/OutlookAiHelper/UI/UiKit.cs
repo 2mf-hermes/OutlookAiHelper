@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
@@ -996,8 +997,13 @@ namespace OutlookAiHelper.UI
             return strip;
         }
 
-        /// <summary>ListBoxItem container that draws content only (kills oversized selection frame).</summary>
-        public static Style FlatListItemStyle()
+        /// <summary>
+        /// ListBoxItem container that draws content only (kills oversized selection frame).
+        /// Rows are compositions of glyphs and text, so a screen reader would otherwise
+        /// announce the container's type name; <paramref name="automationNamePath"/> names
+        /// each container from its own row content instead (e.g. "Content.Tag.Title").
+        /// </summary>
+        public static Style FlatListItemStyle(string automationNamePath = null)
         {
             var style = new Style(typeof(ListBoxItem));
             style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
@@ -1006,6 +1012,13 @@ namespace OutlookAiHelper.UI
             style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
             style.Setters.Add(new Setter(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch));
             style.Setters.Add(new Setter(Control.TemplateProperty, ContentOnlyItemTemplate()));
+            if (!string.IsNullOrEmpty(automationNamePath))
+            {
+                style.Setters.Add(new Setter(
+                    AutomationProperties.NameProperty,
+                    new Binding(automationNamePath) { RelativeSource = RelativeSource.Self }));
+            }
+
             return style;
         }
 

@@ -532,6 +532,7 @@ outlook-ai-helper/
 - Light/Dark 跟隨系統，設定可強制  
 - 文案全部走 `t(key)`，含錯誤、空狀態  
 - 對比、鍵盤焦點、點擊目標 ≥ 44px 高  
+- 圖示按鈕與清單列都有可讀名稱（`AutomationProperties.Name`；列用 `UiKit.FlatListItemStyle("Content.Tag.…")` 綁定自身內容），輔助工具才不會只唸出容器型別  
 
 ### 9.4 Design pass 摘要
 

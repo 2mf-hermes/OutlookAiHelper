@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Automation;
 using OutlookAiHelper.Adapters.Outlook;
 using OutlookAiHelper.Adapters.Storage;
 using OutlookAiHelper.Application;
@@ -280,8 +281,11 @@ namespace OutlookAiHelper.UI
                 VerticalAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(0),
                 Content = UiKit.SidebarGlyph(14),
-                ToolTip = "顯示/隱藏側邊欄"
+                ToolTip = Strings.T("nav.sidebarToggle")
             };
+            // Icon-only: without this a screen reader announces a nameless button, and any
+            // UI automation driving the window has nothing to find it by.
+            AutomationProperties.SetName(btn, Strings.T("nav.sidebarToggle"));
             btn.Click += (s, e) =>
             {
                 try
@@ -443,6 +447,7 @@ namespace OutlookAiHelper.UI
             _navQuadrants = NavButton(Strings.T("nav.quadrants"), true, () => ShowPage("quadrants"));
             stack.Children.Add(_navQuadrants);
             _navTodo = NavButton(BuildNavTodoContent(), false, () => ShowPage("todo"));
+            AutomationProperties.SetName(_navTodo, Strings.T("nav.todo"));
             stack.Children.Add(_navTodo);
             Grid.SetRow(stack, 0);
             grid.Children.Add(stack);
@@ -481,6 +486,8 @@ namespace OutlookAiHelper.UI
                 Foreground = Theme.InkBrush,
                 Template = UiKit.TintedGlassPillTemplate()
             };
+            AutomationProperties.SetName(button, tooltip);
+            AutomationProperties.SetHelpText(button, tooltip);
             button.Click += (s, e) =>
             {
                 try
@@ -846,7 +853,9 @@ namespace OutlookAiHelper.UI
             {
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
-                ItemContainerStyle = UiKit.FlatListItemStyle()
+                // Each row is named after its follow-up title, so assistive tools say
+                // something better than the container's type name.
+                ItemContainerStyle = UiKit.FlatListItemStyle("Content.Tag.Title")
             };
             ScrollViewer.SetVerticalScrollBarVisibility(_todoList, ScrollBarVisibility.Auto);
             ScrollViewer.SetHorizontalScrollBarVisibility(_todoList, ScrollBarVisibility.Disabled);
