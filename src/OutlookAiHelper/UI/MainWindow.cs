@@ -606,7 +606,6 @@ namespace OutlookAiHelper.UI
             }
 
             _quadrantFilter.SelectionChanged += (s, e) => ApplyFilterFromUi();
-            _quadrantFilter.SelectedIndex = 1;
             var segmentHost = UiKit.GlassPlate(_quadrantFilter, UiKit.RadiusPanel, new Thickness(6), false);
             grid.Children.Add(segmentHost);
             Grid.SetRow(segmentHost, 1);
@@ -621,6 +620,13 @@ namespace OutlookAiHelper.UI
             var bodyWrap = UiKit.InsetGroupCard(body);
             grid.Children.Add(bodyWrap);
             Grid.SetRow(bodyWrap, 2);
+
+            // Default the quadrant filter to the first quadrant, and let that selection do the
+            // page's first bind (BindListCore runs ShowEmpty for the pre-scan state).
+            // This has to happen after BuildListPanel: setting SelectedIndex raises
+            // SelectionChanged synchronously, the handler rebinds the mail list, and binding a
+            // list that does not exist yet threw a NullReferenceException on every launch.
+            _quadrantFilter.SelectedIndex = 1;
 
             var footer = new StackPanel { Margin = new Thickness(8, 14, 8, 0) };
             _progress = new ProgressBar { Height = 6, Visibility = Visibility.Collapsed };
@@ -1447,6 +1453,13 @@ namespace OutlookAiHelper.UI
 
         private void BindListCore()
         {
+            // The page's first bind comes from the filter's initial selection; if anything ever
+            // rebinds before BuildListPanel has run, there is simply nothing to bind into yet.
+            if (_mailList == null)
+            {
+                return;
+            }
+
             var source = _items
                 .Where(i => _filterAll || i.Classification.Quadrant == _filter)
                 .OrderByDescending(i => i.Classification.UrgencyScore + i.Classification.ImportanceScore)
