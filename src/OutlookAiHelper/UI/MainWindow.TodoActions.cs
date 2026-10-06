@@ -391,7 +391,11 @@ namespace OutlookAiHelper.UI
 
         // ------------------------------------------------------------------ list tools
 
-        /// <summary>Sort picker plus bulk clear, shown under the filter on the follow-up page.</summary>
+        /// <summary>
+        /// The follow-up page's toolbar: sort picker, bulk clear, then the follow-up status
+        /// picker. One row, one reading order — the status picker used to float on a line of
+        /// its own, where it read as a stray control.
+        /// </summary>
         private UIElement BuildTodoToolsRow()
         {
             _todoSortPicker = UiKit.Select();
@@ -413,9 +417,29 @@ namespace OutlookAiHelper.UI
             var clear = UiKit.Secondary(Strings.T("todo.action.clearDone"), (s, e) => OnClearDone());
             clear.Margin = new Thickness(8, 0, 0, 0);
 
+            // Built here so the toolbar owns its own order. Selecting the initial item raises
+            // BindTodos before the list exists; that is safe because BindTodosCore tolerates a
+            // missing list (the same guard the page's first bind relies on).
+            _todoFilter = UiKit.Select();
+            WithName(_todoFilter, Strings.T("todo.filter.label"));
+            _todoFilter.Width = 150;
+            _todoFilter.ToolTip = Strings.T("todo.filter.label");
+            _todoFilter.Margin = new Thickness(8, 0, 0, 0);
+            _todoFilter.Items.Add(Strings.T("todo.filter.open"));
+            _todoFilter.Items.Add(Strings.T("todo.filter.done"));
+            _todoFilter.Items.Add(Strings.T("todo.filter.all"));
+            _todoFilter.SelectedIndex = 0;
+            _todoFilter.SelectionChanged += (s, e) =>
+            {
+                var i = _todoFilter.SelectedIndex;
+                _todoFilterMode = i == 1 ? "Done" : (i == 2 ? "All" : "Open");
+                BindTodos();
+            };
+
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             row.Children.Add(_todoSortPicker);
             row.Children.Add(clear);
+            row.Children.Add(_todoFilter);
             return row;
         }
 

@@ -477,6 +477,11 @@ namespace OutlookAiHelper.UI
             {
                 Content = glyph,
                 Height = 38,
+                // Icon width, not panel width: the gear is a single glyph, and stretching it
+                // across the sidebar made it read as a full-width row. It sits at the left
+                // edge, under the read-only note, like an app's corner settings affordance.
+                Width = 38,
+                HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0),
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
@@ -839,20 +844,6 @@ namespace OutlookAiHelper.UI
             };
             inputRow.Children.Add(_todoInput);
             tools.Children.Add(inputRow);
-            _todoFilter = UiKit.Select();
-            WithName(_todoFilter, Strings.T("todo.filter.label"));
-            _todoFilter.Width = 150;
-            _todoFilter.Items.Add(Strings.T("todo.filter.open"));
-            _todoFilter.Items.Add(Strings.T("todo.filter.done"));
-            _todoFilter.Items.Add(Strings.T("todo.filter.all"));
-            _todoFilter.SelectedIndex = 0;
-            _todoFilter.SelectionChanged += (s, e) =>
-            {
-                var i = _todoFilter.SelectedIndex;
-                _todoFilterMode = i == 1 ? "Done" : (i == 2 ? "All" : "Open");
-                BindTodos();
-            };
-            tools.Children.Add(_todoFilter);
             tools.Children.Add(BuildTodoToolsRow());
             grid.Children.Add(tools);
             Grid.SetRow(tools, 1);

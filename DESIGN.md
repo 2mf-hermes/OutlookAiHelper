@@ -134,7 +134,7 @@ MainWindow
 
 | 元件 | 用途 | 必備狀態 |
 |---|---|---|
-| `NavRail` | 三入口 | selected / hover / focus |
+| `NavRail` | 三入口；設定齒輪在左下角只佔一個圖示寬（38×38），不隨 panel 撐滿 | selected / hover / focus |
 | `GlassPanel` | 玻璃容器（詳情、設定卡） | default |
 | `Toolbar` | 範圍 + 掃描 | disabled（掃描中） |
 | `QuadrantSegment` | 象限切換 | selected 等 |
@@ -142,6 +142,7 @@ MainWindow
 | `ScoreReasonList` | 可解釋原因 | empty |
 | `QuadrantPicker` | 手動改象限 | default / confirm |
 | `TodoList` / `TodoRow` | 待辦 | empty / loading / error / completed |
+| `TodoToolbar` | 排序 → 清除已完成 → 待辦狀態：同一列，讀序就是操作序 | default |
 | `ScanProgress` | 進度 + 取消 | determinate |
 | `ErrorCard` | 錯誤 + 動作 | — |
 | `EmptyState` | 空狀態 | — |
@@ -531,7 +532,7 @@ outlook-ai-helper/
 - 全部顏色/字級只從 `Tokens.xaml` 來，頁面不自創 hex  
 - Light/Dark 跟隨系統，設定可強制  
 - 文案全部走 `t(key)`，含錯誤、空狀態  
-- 對比與鍵盤焦點照 Apple HIG；點擊目標用**桌面**數值，不套觸控的 44px 規則。實測：側邊欄文字列 186×38、圖示鈕 28×28（另給 `ToolTip` 與 `AutomationProperties.HelpText`），可點區域遠大於指標所需  
+- 對比與鍵盤焦點照 Apple HIG；點擊目標用**桌面**數值，不套觸控的 44px 規則。實測：側邊欄文字列 186×38、圖示鈕 28×28、設定齒輪 38×38（另給 `ToolTip` 與 `AutomationProperties.HelpText`），可點區域遠大於指標所需  
 - 每個可操作控制項都有可讀名稱（`AutomationProperties.Name`）：圖示按鈕、清單列（列用 `UiKit.FlatListItemStyle("Content.Tag.…")` 綁定自身內容）、以及設定頁每個輸入框與下拉選單（`WithName(…)`）。少了它，輔助工具只唸出容器型別或一個空字串  
 
 ### 9.4 Design pass 摘要
