@@ -3,6 +3,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Automation;
 using OutlookAiHelper.Adapters.Logging;
 using OutlookAiHelper.Core.Models;
 using OutlookAiHelper.Localization;
@@ -82,6 +83,7 @@ namespace OutlookAiHelper.UI
             panel.Children.Add(_todoDueText);
 
             _todoDuePicker = UiKit.Select();
+            WithName(_todoDuePicker, Strings.T("todo.action.setDue"));
             _todoDuePicker.Width = 180;
             _todoDuePicker.HorizontalAlignment = HorizontalAlignment.Left;
             _todoDuePicker.ToolTip = Strings.T("todo.action.setDue");
@@ -97,6 +99,7 @@ namespace OutlookAiHelper.UI
 
             panel.Children.Add(UiKit.Caption(Strings.T("todo.detail.note")));
             _todoNoteInput = UiKit.Input(string.Empty);
+            WithName(_todoNoteInput, Strings.T("todo.detail.note"));
             _todoNoteInput.AcceptsReturn = true;
             _todoNoteInput.TextWrapping = TextWrapping.Wrap;
             _todoNoteInput.Height = 64;
@@ -392,6 +395,7 @@ namespace OutlookAiHelper.UI
         private UIElement BuildTodoToolsRow()
         {
             _todoSortPicker = UiKit.Select();
+            WithName(_todoSortPicker, Strings.T("todo.sort"));
             _todoSortPicker.Width = 160;
             _todoSortPicker.ToolTip = Strings.T("todo.sort");
             _todoSortPicker.Items.Add(Strings.T("todo.sort.manual"));

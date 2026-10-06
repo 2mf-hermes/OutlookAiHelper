@@ -734,7 +734,7 @@ namespace OutlookAiHelper.UI
         /// <summary>UITextField — glass field.</summary>
         public static CheckBox AppleCheck(string content)
         {
-            return new CheckBox
+            var check = new CheckBox
             {
                 Content = content,
                 FontSize = TypeBody,
@@ -744,6 +744,14 @@ namespace OutlookAiHelper.UI
                 MinHeight = 24,
                 Margin = new Thickness(0, 2, 0, 8)
             };
+            // A WPF CheckBox does not derive its automation name from its content, so a
+            // screen reader would announce a bare "check box" — name it explicitly.
+            if (!string.IsNullOrEmpty(content))
+            {
+                AutomationProperties.SetName(check, content);
+            }
+
+            return check;
         }
 
         public static TextBox Input(string text)
@@ -973,6 +981,8 @@ namespace OutlookAiHelper.UI
 
             return new Border
             {
+                // Lets the list container name itself after this segment (see FlatListItemStyle).
+                Tag = text,
                 Margin = new Thickness(2, 0, 2, 0),
                 Padding = new Thickness(11, 5, 11, 5),
                 CornerRadius = R(6),

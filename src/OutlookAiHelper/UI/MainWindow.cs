@@ -536,6 +536,7 @@ namespace OutlookAiHelper.UI
         private ComboBox BuildDaysPicker()
         {
             var box = UiKit.Select();
+            WithName(box, Strings.T("settings.days"));
             box.Width = 96;
             box.Height = 32;
             foreach (var d in new[] { "7", "14", "30", "60", "90" })
@@ -593,7 +594,7 @@ namespace OutlookAiHelper.UI
                 Margin = new Thickness(2, 0, 2, 12),
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
-                ItemContainerStyle = UiKit.FlatListItemStyle(),
+                ItemContainerStyle = UiKit.FlatListItemStyle("Content.Tag"),
                 Height = 48
             };
             ScrollViewer.SetHorizontalScrollBarVisibility(_quadrantFilter, ScrollBarVisibility.Disabled);
@@ -820,6 +821,7 @@ namespace OutlookAiHelper.UI
             DockPanel.SetDock(addManual, Dock.Right);
             inputRow.Children.Add(addManual);
             _todoInput = UiKit.Input(string.Empty);
+            WithName(_todoInput, Strings.T("todo.add.hint"));
             _todoInput.Margin = new Thickness(0, 0, 8, 0);
             _todoInput.KeyDown += (s, e) =>
             {
@@ -832,6 +834,7 @@ namespace OutlookAiHelper.UI
             inputRow.Children.Add(_todoInput);
             tools.Children.Add(inputRow);
             _todoFilter = UiKit.Select();
+            WithName(_todoFilter, Strings.T("todo.filter.label"));
             _todoFilter.Width = 150;
             _todoFilter.Items.Add(Strings.T("todo.filter.open"));
             _todoFilter.Items.Add(Strings.T("todo.filter.done"));
@@ -883,11 +886,13 @@ namespace OutlookAiHelper.UI
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.days")));
             _settingsDays = UiKit.Input((_settings != null ? _settings.ScanDays : 30).ToString());
+            WithName(_settingsDays, Strings.T("settings.days"));
             panel.Children.Add(_settingsDays);
             panel.Children.Add(UiKit.Caption(Strings.T("settings.scanScope")));
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.language")));
             _settingsLanguage = UiKit.Select();
+            WithName(_settingsLanguage, Strings.T("settings.language"));
             _settingsLanguage.Width = 180;
             _settingsLanguage.Items.Add("繁體中文");
             _settingsLanguage.Items.Add("简体中文");
@@ -910,6 +915,7 @@ namespace OutlookAiHelper.UI
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.autoRefresh")));
             _autoRefreshBox = UiKit.Select();
+            WithName(_autoRefreshBox, Strings.T("settings.autoRefresh"));
             _autoRefreshBox.Width = 180;
             foreach (var minutes in AutoRefreshChoices)
             {
@@ -925,14 +931,17 @@ namespace OutlookAiHelper.UI
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.urgentKeywords")));
             _settingsUrgent = UiKit.Input(JoinKeywords(_settings != null ? _settings.UrgentKeywords : RuleOptions.DefaultUrgentKeywords()));
+            WithName(_settingsUrgent, Strings.T("settings.urgentKeywords"));
             panel.Children.Add(_settingsUrgent);
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.importantKeywords")));
             _settingsImportant = UiKit.Input(JoinKeywords(_settings != null ? _settings.ImportantKeywords : RuleOptions.DefaultImportantKeywords()));
+            WithName(_settingsImportant, Strings.T("settings.importantKeywords"));
             panel.Children.Add(_settingsImportant);
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.vip")));
             _settingsVip = UiKit.Input(JoinKeywords(_settings != null ? _settings.VipAddresses : new List<string>()));
+            WithName(_settingsVip, Strings.T("settings.vip"));
             panel.Children.Add(_settingsVip);
 
             var save = UiKit.Primary(Strings.T("settings.save"), OnSaveSettingsClick);
@@ -948,6 +957,7 @@ namespace OutlookAiHelper.UI
             panel.Children.Add(UiKit.Caption(Strings.T("ai.providers")));
             var providerRow = new StackPanel { Orientation = Orientation.Horizontal };
             _aiProviders = UiKit.Select();
+            WithName(_aiProviders, Strings.T("ai.providers"));
             _aiProviders.Width = 180;
             _aiProviders.SelectionChanged += (s, e) => OnAiProviderSelected();
             providerRow.Children.Add(_aiProviders);
@@ -965,15 +975,18 @@ namespace OutlookAiHelper.UI
 
             panel.Children.Add(UiKit.Caption(Strings.T("ai.baseUrl")));
             _aiBaseUrl = UiKit.Input(_settings != null ? _settings.AiBaseUrl : string.Empty);
+            WithName(_aiBaseUrl, Strings.T("ai.baseUrl"));
             panel.Children.Add(_aiBaseUrl);
 
             panel.Children.Add(UiKit.Caption(Strings.T("ai.apiKey")));
             _aiApiKey = UiKit.Input(_settings != null ? _settings.AiApiKey : string.Empty);
+            WithName(_aiApiKey, Strings.T("ai.apiKey"));
             panel.Children.Add(_aiApiKey);
 
             panel.Children.Add(UiKit.Caption(Strings.T("ai.models")));
             var modelRow = new StackPanel { Orientation = Orientation.Horizontal };
             _aiModel = UiKit.Select();
+            WithName(_aiModel, Strings.T("ai.models"));
             _aiModel.Width = 220;
             modelRow.Children.Add(_aiModel);
             var loadBtn = UiKit.Secondary(Strings.T("ai.loadModels"), OnAiLoadModels);
@@ -1040,6 +1053,22 @@ namespace OutlookAiHelper.UI
             var host = new Grid();
             host.Children.Add(outer);
             return host;
+        }
+
+        /// <summary>
+        /// Gives a field its own readable name. A caption sitting next to an input is invisible
+        /// to a screen reader, which would otherwise announce a bare "edit" or "combo box".
+        /// </summary>
+        private static TextBox WithName(TextBox field, string name)
+        {
+            AutomationProperties.SetName(field, name);
+            return field;
+        }
+
+        private static ComboBox WithName(ComboBox field, string name)
+        {
+            AutomationProperties.SetName(field, name);
+            return field;
         }
 
         private static string JoinKeywords(IList<string> values)
@@ -1137,6 +1166,10 @@ namespace OutlookAiHelper.UI
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(12, 0, 8, 0)
             };
+            // The box itself carries no text, so without this a screen reader would read a
+            // bare "check box" and the user could not tell which task it completes.
+            AutomationProperties.SetName(toggle, string.Format(Strings.T("todo.toggleDone"), item.Title));
+            AutomationProperties.SetHelpText(toggle, Strings.T("todo.toggleDone.help"));
             toggle.Checked += (s, e) =>
             {
                 if (_suppressTodoUi) return;

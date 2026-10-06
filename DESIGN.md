@@ -531,8 +531,8 @@ outlook-ai-helper/
 - 全部顏色/字級只從 `Tokens.xaml` 來，頁面不自創 hex  
 - Light/Dark 跟隨系統，設定可強制  
 - 文案全部走 `t(key)`，含錯誤、空狀態  
-- 對比、鍵盤焦點、點擊目標 ≥ 44px 高  
-- 圖示按鈕與清單列都有可讀名稱（`AutomationProperties.Name`；列用 `UiKit.FlatListItemStyle("Content.Tag.…")` 綁定自身內容），輔助工具才不會只唸出容器型別  
+- 對比與鍵盤焦點照 Apple HIG；點擊目標用**桌面**數值，不套觸控的 44px 規則。實測：側邊欄文字列 186×38、圖示鈕 28×28（另給 `ToolTip` 與 `AutomationProperties.HelpText`），可點區域遠大於指標所需  
+- 每個可操作控制項都有可讀名稱（`AutomationProperties.Name`）：圖示按鈕、清單列（列用 `UiKit.FlatListItemStyle("Content.Tag.…")` 綁定自身內容）、以及設定頁每個輸入框與下拉選單（`WithName(…)`）。少了它，輔助工具只唸出容器型別或一個空字串  
 
 ### 9.4 Design pass 摘要
 
