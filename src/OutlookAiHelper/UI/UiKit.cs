@@ -1124,6 +1124,68 @@ namespace OutlookAiHelper.UI
             };
         }
 
+        /// <summary>
+        /// Small tinted capsule that marks a row's state, e.g. 已加入待辦. The caller owns both
+        /// colours so the same shape can carry other states without a second helper.
+        /// </summary>
+        public static Border Badge(string text, Brush fill, Brush ink)
+        {
+            return new Border
+            {
+                Tag = text,
+                Padding = new Thickness(8, 2, 8, 2),
+                CornerRadius = R(RadiusPill),
+                Background = fill ?? Theme.BadgeTintBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = text,
+                    FontSize = TypeCaption,
+                    FontWeight = FontWeights.Medium,
+                    Foreground = ink ?? Theme.AccentBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            };
+        }
+
+        /// <summary>
+        /// Thread disclosure triangle: right when collapsed, down when expanded — the macOS
+        /// convention. Drawn as geometry so it needs no icon font and stays crisp at 10px.
+        /// </summary>
+        public static System.Windows.Shapes.Path ChevronGlyph(bool expanded, double size = 10, Brush brush = null)
+        {
+            var figure = new PathFigure { StartPoint = new Point(0, 0), IsClosed = false, IsFilled = false };
+            if (expanded)
+            {
+                figure.Segments.Add(new LineSegment(new Point(size * 0.5, size * 0.42), true));
+                figure.Segments.Add(new LineSegment(new Point(size, 0), true));
+            }
+            else
+            {
+                figure.Segments.Add(new LineSegment(new Point(size * 0.42, size * 0.5), true));
+                figure.Segments.Add(new LineSegment(new Point(0, size), true));
+            }
+
+            var geometry = new PathGeometry();
+            geometry.Figures.Add(figure);
+
+            return new System.Windows.Shapes.Path
+            {
+                Data = geometry,
+                Stroke = brush ?? Theme.SecondaryBrush,
+                StrokeThickness = 1.6,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                StrokeLineJoin = PenLineJoin.Round,
+                Width = size,
+                Height = size,
+                Stretch = Stretch.None,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
+
         public static TextBlock Caption(string text)
         {
             return new TextBlock

@@ -138,7 +138,8 @@ MainWindow
 | `GlassPanel` | 玻璃容器（詳情、設定卡） | default |
 | `Toolbar` | 範圍 + 掃描 | disabled（掃描中） |
 | `QuadrantSegment` | 象限切換 | selected 等 |
-| `MailList` / `MailRow` | 郵件列表 | empty / loading / error / selected |
+| `MailList` / `MailRow` | 郵件清單；清單上方一行摘要（共 N 封 · M 個主旨串 · K 封已加入待辦）。同一主旨串（去掉 Re:/回覆：等前綴後同主旨）合併成一列，列尾有展開箭頭，展開後每個成員各佔一列、縮排於主旨右側 | empty / loading / error / selected / expanded |
+| `MailRowBadge` | 列尾小標籤，接在象限名稱之後（例：已加入待辦）；只標狀態，不取代象限名稱 | 有／無 |
 | `ScoreReasonList` | 可解釋原因 | empty |
 | `QuadrantPicker` | 手動改象限 | default / confirm |
 | `TodoList` / `TodoRow` | 待辦 | empty / loading / error / completed |
@@ -153,6 +154,8 @@ MainWindow
 | `Toast` | 輕量結果 | success / error |
 
 約束：列表行不做重玻璃，避免可讀性下降。玻璃只用在面板與詳情層。
+
+列表行的家具固定為三格：狀態點 → 主旨（＋副行）→ 列尾。列尾是一條橫向堆疊，依序為展開箭頭（僅主旨串列）、象限名稱、小標籤，整組靠列尾對齊、不換行。標籤只標記狀態，不搶走象限名稱的位置。
 
 ---
 

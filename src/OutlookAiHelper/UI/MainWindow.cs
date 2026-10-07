@@ -87,6 +87,14 @@ namespace OutlookAiHelper.UI
         private ScanResultItem _selected;
         private ScanResultItem _lastPicked;
         private bool _autoScanDone;
+        // Item 1/2: which scanned mails are already on the follow-up list, and which thread
+        // rows the user has torn open. Both are keyed by entry id.
+        private HashSet<string> _todoEntryIds = new HashSet<string>(StringComparer.Ordinal);
+        private readonly HashSet<string> _expandedThreads = new HashSet<string>(StringComparer.Ordinal);
+        private TextBlock _listSummary;
+        // Set when the follow-up list changes; the mail list rebinds from it next time it is
+        // shown, so a mail the user adds to the follow-ups gains its 已加入待辦 tag at once.
+        private bool _mailBadgeStale = true;
 
         public MainWindow()
         {
@@ -344,6 +352,12 @@ namespace OutlookAiHelper.UI
             if (_quadrantPage != null)
             {
                 _quadrantPage.Visibility = page == "quadrants" ? Visibility.Visible : Visibility.Collapsed;
+                if (page == "quadrants")
+                {
+                    // Coming back to the mail list is the moment the 已加入待辦 tag has to be
+                    // right, since the user may have added a follow-up in between.
+                    RefreshMailListIfStale();
+                }
             }
 
             if (_todoPage != null)
@@ -681,8 +695,26 @@ namespace OutlookAiHelper.UI
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Content = _mailList
             };
+
+            // 彙整顯示: a quiet one-line tally under the list saying how many mails, how many
+            // topics they folded into, and how many are already on the follow-up list.
+            _listSummary = new TextBlock
+            {
+                FontSize = UiKit.TypeFootnote,
+                FontWeight = FontWeights.Medium,
+                Foreground = Theme.MutedBrush,
+                Margin = new Thickness(2, 8, 2, 2),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Visibility = Visibility.Collapsed
+            };
+
             var host = new Grid();
+            host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(scroll, 0);
+            Grid.SetRow(_listSummary, 1);
             host.Children.Add(scroll);
+            host.Children.Add(_listSummary);
             return host;
         }
 
@@ -1134,6 +1166,9 @@ namespace OutlookAiHelper.UI
             var empty = items.Count == 0;
             _todoEmpty.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
             _todoList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+            // The follow-up list just changed, so the 已加入待辦 tags in the mail list are now
+            // out of date; it re-draws itself the next time that page is shown.
+            _mailBadgeStale = true;
             UpdateTodoBadge();
         }
 
@@ -1276,7 +1311,21 @@ namespace OutlookAiHelper.UI
                 return;
             }
 
+            // Adding the same mail twice would create a second follow-up for it and make the
+            // 已加入待辦 tag ambiguous, so say it is already there instead of duplicating.
+            var entryId = _selected.Mail == null ? null : _selected.Mail.EntryId;
+            if (!string.IsNullOrEmpty(entryId))
+            {
+                RefreshTodoEntryIds();
+                if (_todoEntryIds.Contains(entryId))
+                {
+                    _statusText.Text = Strings.T("todo.alreadyAdded");
+                    return;
+                }
+            }
+
             _todos.AddFromMail(_selected.Mail, Strings.QuadrantName(_selected.Classification.Quadrant));
+            _mailBadgeStale = true;
             _statusText.Text = Strings.T("todo.added");
             ShowPage("todo");
         }
@@ -1458,18 +1507,30 @@ namespace OutlookAiHelper.UI
                 .ThenByDescending(i => i.Mail.ReceivedOn)
                 .ToList();
 
+            RefreshTodoEntryIds();
+
+            // Mails about the same topic fold into one row; the window only ever renders rows.
+            var rows = MailThreads.Group(
+                source,
+                id => _todoEntryIds.Contains(id),
+                key => _expandedThreads.Contains(key));
+            var stats = MailThreads.Summarize(rows);
+
             _mailList.Items.Clear();
 
-            if (source.Count > 0)
+            if (rows.Count > 0)
             {
                 var stack = UiKit.ListRows();
-                for (var i = 0; i < source.Count; i++)
+                for (var i = 0; i < rows.Count; i++)
                 {
-                    UiKit.AddSeparated(stack, BuildRow(source[i]), i == source.Count - 1);
+                    UiKit.AddSeparated(stack, BuildListRow(rows[i]), i == rows.Count - 1);
                 }
 
                 _mailList.Items.Add(UiKit.InsetGroupCard(stack));
             }
+
+            UpdateListSummary(stats);
+            _mailBadgeStale = false;
 
             if (_items.Count == 0)
             {
@@ -1481,8 +1542,78 @@ namespace OutlookAiHelper.UI
             }
         }
 
-        private FrameworkElement BuildRow(ScanResultItem item)
+        /// <summary>
+        /// The entry ids currently on the follow-up list. Recomputed on every bind, so a mail
+        /// added or removed anywhere in the app is honoured the next time the list is drawn.
+        /// </summary>
+        private void RefreshTodoEntryIds()
         {
+            _todoEntryIds = MailThreads.FollowUpEntryIds(_todos == null ? null : _todos.Items);
+        }
+
+        private void UpdateListSummary(MailListStats stats)
+        {
+            if (_listSummary == null)
+            {
+                return;
+            }
+
+            var text = string.Format(Strings.T("mail.list.summary"), stats.Mails, stats.Threads, stats.WithTodo);
+            _listSummary.Text = text;
+            _listSummary.Visibility = stats.Mails > 0 ? Visibility.Visible : Visibility.Collapsed;
+            // Someone reading the count alone, without the rows, still gets the shape of the list.
+            AutomationProperties.SetName(_listSummary, text);
+        }
+
+        /// <summary>
+        /// Re-draws the mail list when the follow-up list changed behind its back. Called when
+        /// the page is shown again, because the list itself has no way to notice.
+        /// </summary>
+        private void RefreshMailListIfStale()
+        {
+            if (!_mailBadgeStale || _mailList == null || _items == null || _items.Count == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                BindListCore();
+            }
+            catch (Exception ex)
+            {
+                Adapters.Logging.FileLogger.Error("RefreshMailListIfStale", ex);
+            }
+        }
+
+        /// <summary>
+        /// One list row: the topic row, and — when the user opened it — one indented sub-row per
+        /// mail that was folded into it.
+        /// </summary>
+        private FrameworkElement BuildListRow(MailListRow row)
+        {
+            var host = new StackPanel();
+            host.Children.Add(BuildRow(row));
+
+            if (row.IsThread && row.Expanded)
+            {
+                foreach (var member in row.Mails)
+                {
+                    if (ReferenceEquals(member, row.Head))
+                    {
+                        continue;
+                    }
+
+                    host.Children.Add(BuildThreadMemberRow(member));
+                }
+            }
+
+            return host;
+        }
+
+        private FrameworkElement BuildRow(MailListRow row)
+        {
+            var item = row.Head;
             var leading = UiKit.StatusDot(item.Classification.Quadrant);
 
             var titles = new StackPanel();
@@ -1494,9 +1625,17 @@ namespace OutlookAiHelper.UI
                 Foreground = Theme.InkBrush,
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
+
+            var sub = item.Mail.FromName + " · " + item.Mail.ReceivedOn.ToString("MM/dd HH:mm");
+            if (row.IsThread)
+            {
+                // The count sits next to the sender, so a folded row never passes for one mail.
+                sub = sub + " · " + string.Format(Strings.T("mail.thread.count"), row.Mails.Count);
+            }
+
             titles.Children.Add(new TextBlock
             {
-                Text = item.Mail.FromName + " · " + item.Mail.ReceivedOn.ToString("MM/dd HH:mm"),
+                Text = sub,
                 FontSize = UiKit.TypeCaption,
                 FontWeight = FontWeights.Regular,
                 Foreground = Theme.MutedBrush,
@@ -1504,24 +1643,135 @@ namespace OutlookAiHelper.UI
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
 
-            var trailing = new TextBlock
+            // Trailing cluster, left to right: disclosure triangle (topics only), quadrant name,
+            // then the 已加入待辦 tag last — the tag is what the eye lands on at the row's end.
+            var trailing = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            if (row.IsThread)
+            {
+                trailing.Children.Add(UiKit.ChevronGlyph(row.Expanded));
+            }
+
+            trailing.Children.Add(new TextBlock
             {
                 Text = Strings.QuadrantName(item.Classification.Quadrant),
                 FontSize = UiKit.TypeCaption,
                 FontWeight = FontWeights.Medium,
-                Foreground = Theme.SecondaryBrush
-            };
+                Foreground = Theme.SecondaryBrush,
+                Margin = new Thickness(row.IsThread ? 8 : 0, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
 
-            var row = (System.Windows.Controls.Grid)UiKit.ListRow(leading, titles, trailing);
-            row.Tag = item;
-            row.Cursor = Cursors.Hand;
-            row.Background = Brushes.Transparent;
-            row.MouseLeftButtonUp += (s, e) =>
+            if (row.HasTodo)
             {
-                _lastPicked = item;
-                OnMailSelectedDetail(item);
-            };
-            return row;
+                var tag = UiKit.Badge(Strings.T("todo.added"), Theme.BadgeTintBrush, Theme.AccentBrush);
+                tag.Margin = new Thickness(8, 0, 0, 0);
+                AutomationProperties.SetName(tag, Strings.T("todo.added"));
+                trailing.Children.Add(tag);
+            }
+
+            var grid = (System.Windows.Controls.Grid)UiKit.ListRow(leading, titles, trailing);
+            grid.Tag = row;
+            grid.Cursor = Cursors.Hand;
+            grid.Background = Brushes.Transparent;
+            grid.MouseLeftButtonUp += (s, e) => OnListRowClick(row);
+            return grid;
+        }
+
+        /// <summary>
+        /// One mail inside an opened topic: indented past the parent's subject and dimmer, and
+        /// clicking it selects that individual mail rather than toggling the topic.
+        /// </summary>
+        private FrameworkElement BuildThreadMemberRow(ScanResultItem item)
+        {
+            var titles = new StackPanel();
+            titles.Children.Add(new TextBlock
+            {
+                Text = item.Mail.Subject,
+                FontSize = UiKit.TypeSubhead,
+                Foreground = Theme.InkBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            titles.Children.Add(new TextBlock
+            {
+                Text = item.Mail.FromName + " · " + item.Mail.ReceivedOn.ToString("MM/dd HH:mm"),
+                FontSize = UiKit.TypeCaption,
+                Foreground = Theme.MutedBrush,
+                Margin = new Thickness(0, 2, 0, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+
+            // Nesting: an empty spacer the width of the parent's dot would already line the
+            // member's text up with the parent's text, so this spacer plus the extra 18pt sets
+            // the member clearly underneath rather than level with it.
+            var spacer = new Border { Width = 10, Background = Brushes.Transparent };
+            var grid = (System.Windows.Controls.Grid)UiKit.ListRow(spacer, titles, null);
+            titles.Margin = new Thickness(18, 12, 10, 12);
+            grid.MinHeight = 44;
+            grid.Tag = item;
+            grid.Cursor = Cursors.Hand;
+            grid.Background = Theme.SurfaceBrush;
+            AutomationProperties.SetName(grid, string.Format(Strings.T("mail.thread.member"), item.Mail.Subject));
+            grid.MouseLeftButtonUp += (s, e) => OnThreadMemberClick(item);
+            return grid;
+        }
+
+        private void OnListRowClick(MailListRow row)
+        {
+            if (row == null)
+            {
+                return;
+            }
+
+            // A folded topic opens instead of selecting; a single mail selects as it always did.
+            if (row.IsThread)
+            {
+                ToggleThread(row);
+                return;
+            }
+
+            _lastPicked = row.Head;
+            OnMailSelectedDetail(row.Head);
+        }
+
+        private void OnThreadMemberClick(ScanResultItem item)
+        {
+            if (item == null)
+            {
+                return;
+            }
+
+            _lastPicked = item;
+            OnMailSelectedDetail(item);
+        }
+
+        private void ToggleThread(MailListRow row)
+        {
+            var key = row.ThreadKey;
+            if (string.IsNullOrEmpty(key))
+            {
+                return;
+            }
+
+            var expanded = !row.Expanded;
+            if (expanded)
+            {
+                _expandedThreads.Add(key);
+            }
+            else
+            {
+                _expandedThreads.Remove(key);
+            }
+
+            // Rebinding keeps the counts, the tags and the expanded state on one code path.
+            BindList();
+            _statusText.Text = expanded
+                ? string.Format(Strings.T("mail.thread.expand"), row.Head.Mail.Subject)
+                : string.Format(Strings.T("mail.thread.collapse"), row.Head.Mail.Subject);
         }
 
         private void OnMailSelectedDetail(ScanResultItem item)
@@ -1608,11 +1858,22 @@ namespace OutlookAiHelper.UI
         {
             _detailTodoId = null;
             _detailEntryId = null;
-            var row = _mailList.SelectedItem as Grid;
-            var picked = row == null ? (_lastPicked) : row.Tag as ScanResultItem;
-            if (picked == null)
+            // A mail row carries the topic it belongs to; selecting it shows the topic's head,
+            // which is the mail the row itself presents.
+            var selected = _mailList.SelectedItem as Grid;
+            var picked = _lastPicked;
+            if (selected != null)
             {
-                picked = _lastPicked;
+                var listRow = selected.Tag as MailListRow;
+                var direct = selected.Tag as ScanResultItem;
+                if (listRow != null)
+                {
+                    picked = listRow.Head;
+                }
+                else if (direct != null)
+                {
+                    picked = direct;
+                }
             }
 
             OnMailSelectedDetail(picked);

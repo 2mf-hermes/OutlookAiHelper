@@ -13,6 +13,7 @@ namespace OutlookAiHelper.TestHost
             failed += SettingsPrivacyTests.Run();
             failed += ScanScopeTests.Run();
             failed += AutoRefreshTests.Run();
+            failed += MailThreadTests.Run();
             failed += UpdateTests.Run();
             if (failed == 0)
             {
