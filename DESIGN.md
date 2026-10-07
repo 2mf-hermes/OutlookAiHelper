@@ -134,7 +134,7 @@ MainWindow
 
 | 元件 | 用途 | 必備狀態 |
 |---|---|---|
-| `NavRail` | 三入口；設定齒輪在左下角只佔一個圖示寬（38×38），不隨 panel 撐滿 | selected / hover / focus |
+| `NavRail` | 三入口；設定齒輪在**右下角**只佔一個圖示寬（38×38），不隨 panel 撐滿 | selected / hover / focus |
 | `GlassPanel` | 玻璃容器（詳情、設定卡） | default |
 | `Toolbar` | 範圍 + 掃描 | disabled（掃描中） |
 | `QuadrantSegment` | 象限切換 | selected 等 |

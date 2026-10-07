@@ -427,8 +427,8 @@ namespace OutlookAiHelper.UI
         private UIElement BuildNav()
         {
             // Floating sidebar (Liquid Glass navigation layer). A three-row grid keeps
-            // the read-only note and the settings button parked at the bottom edge of
-            // the panel, however tall the window is.
+            // the read-only note on the bottom-left and the settings gear in the bottom-right
+            // corner of the panel, however tall the window is.
             var grid = new Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -478,10 +478,11 @@ namespace OutlookAiHelper.UI
                 Content = glyph,
                 Height = 38,
                 // Icon width, not panel width: the gear is a single glyph, and stretching it
-                // across the sidebar made it read as a full-width row. It sits at the left
-                // edge, under the read-only note, like an app's corner settings affordance.
+                // across the sidebar made it read as a full-width row. It parks in the panel's
+                // bottom-right corner, diagonally opposite the read-only note, the way a
+                // window puts its corner affordance.
                 Width = 38,
-                HorizontalAlignment = HorizontalAlignment.Left,
+                HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0),
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
