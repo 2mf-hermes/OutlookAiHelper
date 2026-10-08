@@ -1668,9 +1668,14 @@ namespace OutlookAiHelper.UI
 
             if (row.HasTodo)
             {
-                var tag = UiKit.Badge(Strings.T("todo.added"), Theme.BadgeTintBrush, Theme.AccentBrush);
+                // A folded topic can hold more than one mail that is already on the follow-up
+                // list, so the tag carries the count as soon as there is more than one.
+                var tagText = row.TodoCount > 1
+                    ? string.Format(Strings.T("todo.added.count"), row.TodoCount)
+                    : Strings.T("todo.added");
+                var tag = UiKit.Badge(tagText, Theme.BadgeTintBrush, Theme.AccentBrush);
                 tag.Margin = new Thickness(8, 0, 0, 0);
-                AutomationProperties.SetName(tag, Strings.T("todo.added"));
+                AutomationProperties.SetName(tag, tagText);
                 trailing.Children.Add(tag);
             }
 
@@ -1709,7 +1714,17 @@ namespace OutlookAiHelper.UI
             // member's text up with the parent's text, so this spacer plus the extra 18pt sets
             // the member clearly underneath rather than level with it.
             var spacer = new Border { Width = 10, Background = Brushes.Transparent };
-            var grid = (System.Windows.Controls.Grid)UiKit.ListRow(spacer, titles, null);
+
+            // A mail inside an opened topic that is itself on the follow-up list carries the
+            // same tag, so an opened topic says which of its mails the tag is about.
+            UIElement memberTag = null;
+            if (_todoEntryIds != null && _todoEntryIds.Contains(item.Mail.EntryId))
+            {
+                memberTag = UiKit.Badge(Strings.T("todo.added"), Theme.BadgeTintBrush, Theme.AccentBrush);
+                AutomationProperties.SetName(memberTag, Strings.T("todo.added"));
+            }
+
+            var grid = (System.Windows.Controls.Grid)UiKit.ListRow(spacer, titles, memberTag);
             titles.Margin = new Thickness(18, 12, 10, 12);
             grid.MinHeight = 44;
             grid.Tag = item;
