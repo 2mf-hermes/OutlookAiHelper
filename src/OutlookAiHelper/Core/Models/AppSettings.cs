@@ -15,12 +15,20 @@ namespace OutlookAiHelper.Core.Models
         /// <summary>Longest probe interval the settings UI offers.</summary>
         public const int MaxAutoRefreshMinutes = 30;
 
+        /// <summary>
+        /// Name of the default mail ordering. Stored as text so a settings file written by
+        /// a newer build still loads: an unknown name reads back as the default rather
+        /// than breaking the list (see MailOrdering.ParseMode).
+        /// </summary>
+        public const string DefaultMailSort = "NewestFirst";
+
         public AppSettings()
         {
             SchemaVersion = 1;
             Language = "zh-TW";
             ScanDays = 30;
             AutoRefreshMinutes = DefaultAutoRefreshMinutes;
+            MailSort = DefaultMailSort;
             FolderPath = "Inbox";
             VipAddresses = new List<string>();
             UrgentKeywords = new List<string>();
@@ -60,6 +68,13 @@ namespace OutlookAiHelper.Core.Models
         /// less than the periodic full rescan it replaces.
         /// </summary>
         public int AutoRefreshMinutes { get; set; }
+
+        /// <summary>
+        /// How the mail list — and the mails shown beside a follow-up — are ordered, stored
+        /// by name (see MailOrdering). One setting covers both surfaces on purpose: they
+        /// show the same mails, so two settings could only ever disagree.
+        /// </summary>
+        public string MailSort { get; set; }
 
         public AiProviderProfile GetSelectedProvider()
         {

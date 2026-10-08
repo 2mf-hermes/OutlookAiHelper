@@ -62,6 +62,10 @@ namespace OutlookAiHelper.Adapters.Storage
         /// </summary>
         [DataMember(Order = 15)]
         public int? AutoRefreshMinutes { get; set; }
+
+        /// <summary>The mail ordering by name; absent from files written before it existed.</summary>
+        [DataMember(Order = 16)]
+        public string MailSort { get; set; }
     }
 
     [DataContract]
@@ -137,7 +141,8 @@ namespace OutlookAiHelper.Adapters.Storage
                         AiProviders = FromProviderRecords(doc.AiProviders),
                         SelectedAiProviderId = doc.SelectedAiProviderId ?? string.Empty,
                         CheckForUpdatesOnStartup = doc.CheckForUpdatesOnStartup,
-                        AutoRefreshMinutes = NormalizeAutoRefreshMinutes(doc.AutoRefreshMinutes)
+                        AutoRefreshMinutes = NormalizeAutoRefreshMinutes(doc.AutoRefreshMinutes),
+                        MailSort = string.IsNullOrEmpty(doc.MailSort) ? AppSettings.DefaultMailSort : doc.MailSort
                     };
                 }
             }
@@ -172,7 +177,8 @@ namespace OutlookAiHelper.Adapters.Storage
                 AiProviders = ToProviderRecords(settings.AiProviders),
                 SelectedAiProviderId = settings.SelectedAiProviderId ?? string.Empty,
                 CheckForUpdatesOnStartup = settings.CheckForUpdatesOnStartup,
-                AutoRefreshMinutes = NormalizeAutoRefreshMinutes(settings.AutoRefreshMinutes)
+                AutoRefreshMinutes = NormalizeAutoRefreshMinutes(settings.AutoRefreshMinutes),
+                MailSort = string.IsNullOrEmpty(settings.MailSort) ? AppSettings.DefaultMailSort : settings.MailSort
             };
 
             using (var stream = File.Create(_path))

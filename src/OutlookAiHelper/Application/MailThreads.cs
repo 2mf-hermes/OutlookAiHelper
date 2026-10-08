@@ -124,14 +124,25 @@ namespace OutlookAiHelper.Application
                 return null;
             }
 
-            var subject = NormalizeSubject(mail.Subject);
-            if (subject.Length >= 2)
+            var key = KeyOfSubject(mail.Subject);
+            if (key != null)
             {
-                return "s:" + subject;
+                return key;
             }
 
             var sender = SenderKey(mail);
             return sender.Length == 0 ? null : "f:" + sender;
+        }
+
+        /// <summary>
+        /// The key a mail with this subject groups under, or null when the subject cannot carry a
+        /// topic. It lets a follow-up find its conversation from the subject it stored, even after
+        /// the mail itself has dropped out of the scan window.
+        /// </summary>
+        public static string KeyOfSubject(string subject)
+        {
+            var normalized = NormalizeSubject(subject);
+            return normalized.Length >= 2 ? "s:" + normalized : null;
         }
 
         /// <summary>

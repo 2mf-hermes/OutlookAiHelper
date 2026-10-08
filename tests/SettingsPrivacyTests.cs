@@ -21,7 +21,8 @@ namespace OutlookAiHelper.Tests
                 failed += Check("defaults when missing", () =>
                 {
                     var s = store.Load();
-                    return s.ScanDays == 30 && s.UrgentKeywords.Count > 0 && s.AiEnabled == false;
+                    return s.ScanDays == 30 && s.UrgentKeywords.Count > 0 && s.AiEnabled == false
+                        && s.MailSort == AppSettings.DefaultMailSort;
                 });
 
                 failed += Check("save and load keywords", () =>
@@ -31,12 +32,14 @@ namespace OutlookAiHelper.Tests
                     s.UrgentKeywords.Add("特急件");
                     s.VipAddresses.Add("boss@contoso.com");
                     s.Language = "en-US";
+                    s.MailSort = MailSortMode.Sender.ToString();
                     store.Save(s);
                     var loaded = store.Load();
                     return loaded.ScanDays == 14
                         && loaded.UrgentKeywords.Contains("特急件")
                         && loaded.VipAddresses.Contains("boss@contoso.com")
-                        && loaded.Language == "en-US";
+                        && loaded.Language == "en-US"
+                        && loaded.MailSort == MailSortMode.Sender.ToString();
                 });
 
                 failed += Check("export copies files", () =>
@@ -58,6 +61,15 @@ namespace OutlookAiHelper.Tests
                     return !File.Exists(Path.Combine(dir, "settings.json"))
                         && !File.Exists(Path.Combine(dir, "todos.json"))
                         && !File.Exists(Path.Combine(dir, "overrides.json"));
+                });
+
+                failed += Check("an unusable stored mail order still orders the list", () =>
+                {
+                    var s = AppSettings.CreateDefault();
+                    s.MailSort = "nonsense";
+                    store.Save(s);
+                    var stored = store.Load();
+                    return MailOrdering.ParseMode(stored.MailSort) == MailOrdering.DefaultMode;
                 });
 
                 failed += Check("bad settings quarantines", () =>

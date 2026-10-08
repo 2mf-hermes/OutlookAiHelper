@@ -65,6 +65,7 @@ namespace OutlookAiHelper.UI
         private TextBox _settingsImportant;
         private TextBox _settingsVip;
         private ComboBox _settingsLanguage;
+        private ComboBox _mailSortBox;
         private CheckBox _aiEnabled;
         private TextBox _aiBaseUrl;
         private TextBox _aiApiKey;
@@ -821,6 +822,13 @@ namespace OutlookAiHelper.UI
             stack.Children.Add(_detailMeta);
             stack.Children.Add(UiKit.Subtitle(Strings.T("reason.title")));
             stack.Children.Add(_reasonPanel);
+
+            // The follow-up's conversation: what else was said in the topic this mail came from,
+            // so a reply can be written knowing the rest of it. Filled per selection, and down
+            // when the topic holds nothing but the mail already shown above.
+            _relatedBlock = BuildRelatedBlock();
+            stack.Children.Add(_relatedBlock);
+
             _todoActions = BuildTodoActionsPanel();
             stack.Children.Add(_todoActions);
             stack.Children.Add(_openOutlookButton);
@@ -958,6 +966,26 @@ namespace OutlookAiHelper.UI
                 ? _settings.AutoRefreshMinutes
                 : AppSettings.DefaultAutoRefreshMinutes);
             panel.Children.Add(_autoRefreshBox);
+
+            panel.Children.Add(UiKit.Caption(Strings.T("mail.sort")));
+            _mailSortBox = UiKit.Select();
+            WithName(_mailSortBox, Strings.T("mail.sort"));
+            _mailSortBox.Width = 180;
+            foreach (var mode in MailOrdering.Modes)
+            {
+                _mailSortBox.Items.Add(Strings.T(MailOrdering.LabelKey(mode)));
+            }
+
+            _mailSortBox.SelectedIndex = MailSortChoiceIndex(CurrentMailSort());
+            panel.Children.Add(_mailSortBox);
+            panel.Children.Add(new TextBlock
+            {
+                Text = Strings.T("mail.sort.help"),
+                FontSize = UiKit.TypeFootnote,
+                Foreground = Theme.MutedBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0)
+            });
 
             panel.Children.Add(UiKit.Caption(Strings.T("settings.urgentKeywords")));
             _settingsUrgent = UiKit.Input(JoinKeywords(_settings != null ? _settings.UrgentKeywords : RuleOptions.DefaultUrgentKeywords()));
@@ -1492,6 +1520,49 @@ namespace OutlookAiHelper.UI
             }
         }
 
+        /// <summary>
+        /// The mail order the user picked, read from settings each time rather than cached, so
+        /// the mail list and the follow-up panel cannot end up showing different orders.
+        /// </summary>
+        private MailSortMode CurrentMailSort()
+        {
+            return MailOrdering.ParseMode(_settings == null ? null : _settings.MailSort);
+        }
+
+        /// <summary>Choice index of a mode in the settings picker (MailOrdering.Modes order).</summary>
+        private static int MailSortChoiceIndex(MailSortMode mode)
+        {
+            for (var i = 0; i < MailOrdering.Modes.Length; i++)
+            {
+                if (MailOrdering.Modes[i] == mode)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+
+        /// <summary>The mode the settings picker is showing (the default before it is built).</summary>
+        private MailSortMode SelectedMailSort()
+        {
+            var index = _mailSortBox == null ? -1 : _mailSortBox.SelectedIndex;
+            return index >= 0 && index < MailOrdering.Modes.Length
+                ? MailOrdering.Modes[index]
+                : MailOrdering.DefaultMode;
+        }
+
+        /// <summary>
+        /// Re-draws everything the shared mail sort orders - the mail list and the related mails
+        /// beside an open follow-up - so a changed setting is visible at once rather than at the
+        /// next scan.
+        /// </summary>
+        private void ApplyMailOrdering()
+        {
+            BindList();
+            RefreshRelatedMails();
+        }
+
         private void BindListCore()
         {
             // The page's first bind comes from the filter's initial selection; if anything ever
@@ -1509,11 +1580,15 @@ namespace OutlookAiHelper.UI
 
             RefreshTodoEntryIds();
 
-            // Mails about the same topic fold into one row; the window only ever renders rows.
-            var rows = MailThreads.Group(
-                source,
-                id => _todoEntryIds.Contains(id),
-                key => _expandedThreads.Contains(key));
+            // Mails about the same topic fold into one row; the window only ever renders rows;
+            // and the row order itself comes from the one mail sort the user picked, which the
+            // related mails beside a follow-up also use.
+            var rows = MailOrdering.SortRows(
+                MailThreads.Group(
+                    source,
+                    id => _todoEntryIds.Contains(id),
+                    key => _expandedThreads.Contains(key)),
+                CurrentMailSort());
             var stats = MailThreads.Summarize(rows);
 
             _mailList.Items.Clear();
@@ -1653,7 +1728,27 @@ namespace OutlookAiHelper.UI
 
             if (row.IsThread)
             {
-                trailing.Children.Add(UiKit.ChevronGlyph(row.Expanded));
+                // The disclosure triangle is the only way in and out of a folded topic - the row
+                // body shows the topic's own mail instead - so it is a button of its own, wide
+                // enough to hit (DESIGN.md 9.3) and named for screen readers.
+                var chevron = new Button
+                {
+                    Content = UiKit.ChevronGlyph(row.Expanded),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(0),
+                    MinWidth = 36,
+                    MinHeight = 44,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = Cursors.Hand
+                };
+                AutomationProperties.SetName(
+                    chevron,
+                    string.Format(
+                        Strings.T(row.Expanded ? "mail.thread.collapse" : "mail.thread.expand"),
+                        item.Mail.Subject));
+                chevron.Click += (s, e) => OnThreadToggleClick(row);
+                trailing.Children.Add(chevron);
             }
 
             trailing.Children.Add(new TextBlock
@@ -1683,7 +1778,16 @@ namespace OutlookAiHelper.UI
             grid.Tag = row;
             grid.Cursor = Cursors.Hand;
             grid.Background = Brushes.Transparent;
-            grid.MouseLeftButtonUp += (s, e) => OnListRowClick(row);
+            grid.MouseLeftButtonUp += (s, e) =>
+            {
+                // A click on the triangle is the triangle's business, not the row's.
+                if (IsFromInteractiveChild(e.OriginalSource as DependencyObject))
+                {
+                    return;
+                }
+
+                OnListRowClick(row);
+            };
             return grid;
         }
 
@@ -1742,15 +1846,23 @@ namespace OutlookAiHelper.UI
                 return;
             }
 
-            // A folded topic opens instead of selecting; a single mail selects as it always did.
-            if (row.IsThread)
+            // The row shows the mail it presents; a folded topic opens only from its triangle, so
+            // the mail behind a collapsed topic is never a dead end.
+            _lastPicked = row.Head;
+            OnMailSelectedDetail(row.Head);
+        }
+
+        /// <summary>
+        /// The disclosure triangle on a folded topic: the one control that opens and closes it.
+        /// </summary>
+        private void OnThreadToggleClick(MailListRow row)
+        {
+            if (row == null || !row.IsThread)
             {
-                ToggleThread(row);
                 return;
             }
 
-            _lastPicked = row.Head;
-            OnMailSelectedDetail(row.Head);
+            ToggleThread(row);
         }
 
         private void OnThreadMemberClick(ScanResultItem item)
@@ -1806,6 +1918,7 @@ namespace OutlookAiHelper.UI
             // Selecting a plain mail turns the follow-up block off again; ShowTodoDetail
             // re-renders it right after this call.
             SetTodoActionsVisible(false);
+            SetRelatedMailsVisible(false);
             _selected = item;
             if (item != null)
             {
@@ -2427,6 +2540,7 @@ namespace OutlookAiHelper.UI
             _settings.AiApiKey = selectedP != null ? selectedP.ApiKey : string.Empty;
             _settings.CheckForUpdatesOnStartup = _updateAutoCheck != null && _updateAutoCheck.IsChecked == true;
             _settings.AutoRefreshMinutes = SelectedAutoRefreshMinutes();
+            _settings.MailSort = SelectedMailSort().ToString();
             var langIndex = _settingsLanguage != null ? _settingsLanguage.SelectedIndex : 0;
             _settings.Language = langIndex == 1 ? "zh-CN" : (langIndex == 2 ? "en-US" : "zh-TW");
 
@@ -2445,6 +2559,12 @@ namespace OutlookAiHelper.UI
             ConfigureAutoRefresh();
             Strings.Language = _settings.ToUiLanguage();
             ApplySettingsToToolbar();
+            if (_mailSortBox != null)
+            {
+                _mailSortBox.SelectedIndex = MailSortChoiceIndex(CurrentMailSort());
+            }
+
+            ApplyMailOrdering();
             RefreshAiProviderCombo();
             _statusText.Text = Strings.T("settings.saved");
 
