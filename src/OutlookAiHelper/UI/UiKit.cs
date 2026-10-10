@@ -772,9 +772,59 @@ namespace OutlookAiHelper.UI
             return box;
         }
 
+        /// <summary>
+        /// Same glass chrome as <see cref="Input"/>, for a masked <see cref="PasswordBox"/>.
+        /// PasswordBox is not a TextBox: it has no CaretBrush and no Text, hence the twin.
+        /// </summary>
+        public static PasswordBox PasswordInput(string text)
+        {
+            var box = new PasswordBox
+            {
+                Password = text ?? string.Empty,
+                Height = 36,
+                Background = Brushes.Transparent,
+                Foreground = Theme.InkBrush,
+                BorderThickness = new Thickness(0),
+                FontSize = TypeBody,
+                FontWeight = FontWeights.Regular,
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            box.Template = GlassSecretTemplate();
+            return box;
+        }
+
         public static ControlTemplate GlassInputTemplate()
         {
             var template = new ControlTemplate(typeof(TextBox));
+            var root = new FrameworkElementFactory(typeof(Grid));
+
+            var plate = new FrameworkElementFactory(typeof(Border));
+            plate.SetValue(Border.CornerRadiusProperty, R(RadiusField));
+            plate.SetValue(Border.BackgroundProperty, (Brush)new SolidColorBrush(Color.FromRgb(0xF2, 0xF0, 0xEB)));
+            plate.SetValue(Border.BorderBrushProperty, (Brush)new SolidColorBrush(Color.FromRgb(0xD0, 0xCB, 0xC3)));
+            plate.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+            plate.SetValue(Border.PaddingProperty, new Thickness(Space2, 0, Space2, 0));
+
+            var sheen = new FrameworkElementFactory(typeof(Border));
+            sheen.SetValue(Border.CornerRadiusProperty, R(RadiusField));
+            sheen.SetValue(Border.BackgroundProperty, GlassSheen());
+            sheen.SetValue(UIElement.IsHitTestVisibleProperty, false);
+
+            var scroll = new FrameworkElementFactory(typeof(ScrollViewer));
+            scroll.Name = "PART_ContentHost";
+            scroll.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            root.AppendChild(plate);
+            root.AppendChild(sheen);
+            root.AppendChild(scroll);
+            template.VisualTree = root;
+            return template;
+        }
+
+        /// <summary>The <see cref="GlassInputTemplate"/> visual tree, typed for PasswordBox.</summary>
+        public static ControlTemplate GlassSecretTemplate()
+        {
+            var template = new ControlTemplate(typeof(PasswordBox));
             var root = new FrameworkElementFactory(typeof(Grid));
 
             var plate = new FrameworkElementFactory(typeof(Border));

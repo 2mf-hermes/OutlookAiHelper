@@ -68,8 +68,13 @@ namespace OutlookAiHelper.UI
         private ComboBox _mailSortBox;
         private CheckBox _aiEnabled;
         private TextBox _aiBaseUrl;
-        private TextBox _aiApiKey;
-        private ComboBox _aiProviders;
+        private PasswordBox _aiApiKey;
+        private StackPanel _aiProviderList;
+        private StackPanel _aiEditor;
+        private TextBox _aiProviderName;
+        private TextBox _aiApiKeyPlain;
+        private CheckBox _aiKeyReveal;
+        private bool _aiEditingIsNew;
         private ComboBox _aiModel;
         private TextBlock _aiModelHint;
         private bool _aiUiSync;
@@ -916,19 +921,35 @@ namespace OutlookAiHelper.UI
             return grid;
         }
 
+        /// <summary>The readable measure the settings column stops at.</summary>
+        private const double SettingsColumnWidth = 640;
+
+        /// <summary>
+        /// The settings page: one labelled card per topic instead of a single flat column of
+        /// captions. The column keeps a readable measure rather than spanning the whole window.
+        /// </summary>
         private Panel BuildSettingsPage()
         {
             var outer = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            var panel = new StackPanel { Margin = new Thickness(4, 8, 4, 16) };
-            panel.Children.Add(UiKit.Subtitle(Strings.T("nav.settings")));
+            var column = new StackPanel
+            {
+                Margin = new Thickness(4, 8, 4, 16),
+                MaxWidth = SettingsColumnWidth,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            column.Children.Add(UiKit.Subtitle(Strings.T("nav.settings")));
 
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.days")));
+            // Block 1 — how far back a scan looks.
             _settingsDays = UiKit.Input((_settings != null ? _settings.ScanDays : 30).ToString());
             WithName(_settingsDays, Strings.T("settings.days"));
-            panel.Children.Add(_settingsDays);
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.scanScope")));
+            _settingsDays.Width = 90;
+            column.Children.Add(SettingsGroup(
+                Strings.T("settings.section.scan"),
+                SettingsRow(Strings.T("settings.days"), _settingsDays),
+                SettingsNote(Strings.T("settings.scanScope"))));
 
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.language")));
+            // Block 2 — the language plus the one sort setting the mail list and the todo
+            // panel's related-mails block share.
             _settingsLanguage = UiKit.Select();
             WithName(_settingsLanguage, Strings.T("settings.language"));
             _settingsLanguage.Width = 180;
@@ -949,9 +970,22 @@ namespace OutlookAiHelper.UI
             }
 
             _settingsLanguage.SelectedIndex = langIndex;
-            panel.Children.Add(_settingsLanguage);
 
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.autoRefresh")));
+            _mailSortBox = UiKit.Select();
+            WithName(_mailSortBox, Strings.T("mail.sort"));
+            _mailSortBox.Width = 180;
+            foreach (var mode in MailOrdering.Modes)
+            {
+                _mailSortBox.Items.Add(Strings.T(MailOrdering.LabelKey(mode)));
+            }
+
+            _mailSortBox.SelectedIndex = MailSortChoiceIndex(CurrentMailSort());
+            column.Children.Add(SettingsGroup(
+                Strings.T("settings.section.display"),
+                SettingsRow(Strings.T("settings.language"), _settingsLanguage),
+                SettingsRow(Strings.T("mail.sort"), _mailSortBox, Strings.T("mail.sort.help"))));
+
+            // Block 3 — the cheap new-mail poll that drives the full rescan.
             _autoRefreshBox = UiKit.Select();
             WithName(_autoRefreshBox, Strings.T("settings.autoRefresh"));
             _autoRefreshBox.Width = 180;
@@ -965,152 +999,256 @@ namespace OutlookAiHelper.UI
             _autoRefreshBox.SelectedIndex = AutoRefreshChoiceIndex(_settings != null
                 ? _settings.AutoRefreshMinutes
                 : AppSettings.DefaultAutoRefreshMinutes);
-            panel.Children.Add(_autoRefreshBox);
+            column.Children.Add(SettingsGroup(
+                Strings.T("settings.section.refresh"),
+                SettingsRow(Strings.T("settings.autoRefresh"), _autoRefreshBox)));
 
-            panel.Children.Add(UiKit.Caption(Strings.T("mail.sort")));
-            _mailSortBox = UiKit.Select();
-            WithName(_mailSortBox, Strings.T("mail.sort"));
-            _mailSortBox.Width = 180;
-            foreach (var mode in MailOrdering.Modes)
-            {
-                _mailSortBox.Items.Add(Strings.T(MailOrdering.LabelKey(mode)));
-            }
-
-            _mailSortBox.SelectedIndex = MailSortChoiceIndex(CurrentMailSort());
-            panel.Children.Add(_mailSortBox);
-            panel.Children.Add(new TextBlock
-            {
-                Text = Strings.T("mail.sort.help"),
-                FontSize = UiKit.TypeFootnote,
-                Foreground = Theme.MutedBrush,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 6, 0, 0)
-            });
-
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.urgentKeywords")));
+            // Block 4 — the words that decide a quadrant.
             _settingsUrgent = UiKit.Input(JoinKeywords(_settings != null ? _settings.UrgentKeywords : RuleOptions.DefaultUrgentKeywords()));
             WithName(_settingsUrgent, Strings.T("settings.urgentKeywords"));
-            panel.Children.Add(_settingsUrgent);
-
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.importantKeywords")));
             _settingsImportant = UiKit.Input(JoinKeywords(_settings != null ? _settings.ImportantKeywords : RuleOptions.DefaultImportantKeywords()));
             WithName(_settingsImportant, Strings.T("settings.importantKeywords"));
-            panel.Children.Add(_settingsImportant);
-
-            panel.Children.Add(UiKit.Caption(Strings.T("settings.vip")));
             _settingsVip = UiKit.Input(JoinKeywords(_settings != null ? _settings.VipAddresses : new List<string>()));
             WithName(_settingsVip, Strings.T("settings.vip"));
-            panel.Children.Add(_settingsVip);
+            column.Children.Add(SettingsGroup(
+                Strings.T("settings.section.rules"),
+                SettingsStackedRow(Strings.T("settings.urgentKeywords"), _settingsUrgent),
+                SettingsStackedRow(Strings.T("settings.importantKeywords"), _settingsImportant),
+                SettingsStackedRow(Strings.T("settings.vip"), _settingsVip)));
+
+            // Blocks 5-7 — AI enhancement, privacy, software update.
+            column.Children.Add(BuildAiSettingsGroup());
+            column.Children.Add(BuildPrivacySettingsGroup());
+            var updateGroup = UiKit.InsetGroup(Strings.T("update.section"), BuildUpdateSection());
+            updateGroup.Margin = new Thickness(0, 0, 0, 18);
+            column.Children.Add(updateGroup);
 
             var save = UiKit.Primary(Strings.T("settings.save"), OnSaveSettingsClick);
             save.HorizontalAlignment = HorizontalAlignment.Left;
-            save.Margin = new Thickness(0, 12, 0, 24);
-            panel.Children.Add(save);
+            save.Margin = new Thickness(0, 4, 0, 24);
+            column.Children.Add(save);
 
-            panel.Children.Add(UiKit.Subtitle(Strings.T("ai.title")));
+            outer.Content = UiKit.Panel(column);
+            var host = new Grid();
+            host.Children.Add(outer);
+            // The page exists now, so the provider rows can be filled for the first time.
+            RefreshAiProviderCombo();
+            return host;
+        }
+
+        /// <summary>One settings block: a section header over a rounded card of rows.</summary>
+        private static FrameworkElement SettingsGroup(string header, params FrameworkElement[] rows)
+        {
+            var list = UiKit.ListRows();
+            for (var i = 0; i < rows.Length; i++)
+            {
+                UiKit.AddSeparated(list, rows[i], i == rows.Length - 1);
+            }
+
+            var group = UiKit.InsetGroup(header, list);
+            group.Margin = new Thickness(0, 0, 0, 18);
+            return group;
+        }
+
+        /// <summary>A row: label on the left, its control on the right.</summary>
+        private static FrameworkElement SettingsRow(string label, FrameworkElement control)
+        {
+            return SettingsRow(label, control, null);
+        }
+
+        /// <summary>A row with a grey footnote under its label.</summary>
+        private static FrameworkElement SettingsRow(string label, FrameworkElement control, string footnote)
+        {
+            var body = new StackPanel();
+            body.Children.Add(new TextBlock
+            {
+                Text = label,
+                FontSize = UiKit.TypeBody,
+                Foreground = Theme.InkBrush,
+                TextWrapping = TextWrapping.Wrap
+            });
+            if (!string.IsNullOrEmpty(footnote))
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = footnote,
+                    FontSize = UiKit.TypeCaption,
+                    Foreground = Theme.MutedBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 3, 0, 0)
+                });
+            }
+
+            return UiKit.ListRow(null, body, control);
+        }
+
+        /// <summary>A caption above a control that needs the whole card width.</summary>
+        private static FrameworkElement SettingsStackedRow(string label, FrameworkElement control)
+        {
+            var stack = new StackPanel { Margin = new Thickness(16, 12, 16, 12) };
+            stack.Children.Add(new TextBlock
+            {
+                Text = label,
+                FontSize = UiKit.TypeBody,
+                Foreground = Theme.InkBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8)
+            });
+            control.HorizontalAlignment = HorizontalAlignment.Stretch;
+            stack.Children.Add(control);
+            return stack;
+        }
+
+        /// <summary>The grey explanation under the rows it belongs to.</summary>
+        private static FrameworkElement SettingsNote(params string[] lines)
+        {
+            var stack = new StackPanel { Margin = new Thickness(16, 12, 16, 14) };
+            foreach (var text in lines)
+            {
+                stack.Children.Add(new TextBlock
+                {
+                    Text = text,
+                    FontSize = UiKit.TypeCaption,
+                    Foreground = Theme.MutedBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 3)
+                });
+            }
+
+            return stack;
+        }
+
+        /// <summary>
+        /// Block 5 — AI enhancement. Only the provider rows are always on screen: the URL / key /
+        /// model inputs live in an editor that opens in place, under the list, on 新增 or 編輯.
+        /// </summary>
+        private FrameworkElement BuildAiSettingsGroup()
+        {
             _aiEnabled = UiKit.AppleCheck(Strings.T("ai.enabled"));
             _aiEnabled.IsChecked = _settings != null && _settings.AiEnabled;
-            panel.Children.Add(_aiEnabled);
 
-            panel.Children.Add(UiKit.Caption(Strings.T("ai.providers")));
-            var providerRow = new StackPanel { Orientation = Orientation.Horizontal };
-            _aiProviders = UiKit.Select();
-            WithName(_aiProviders, Strings.T("ai.providers"));
-            _aiProviders.Width = 180;
-            _aiProviders.SelectionChanged += (s, e) => OnAiProviderSelected();
-            providerRow.Children.Add(_aiProviders);
-            var addP = UiKit.Secondary(Strings.T("ai.addProvider"), OnAiProviderAdd);
-            addP.Margin = new Thickness(8, 0, 0, 0);
-            addP.Height = 32;
-            addP.MinWidth = 64;
-            providerRow.Children.Add(addP);
-            var delP = UiKit.Secondary(Strings.T("ai.removeProvider"), OnAiProviderRemove);
-            delP.Margin = new Thickness(8, 0, 0, 0);
-            delP.Height = 32;
-            delP.MinWidth = 64;
-            providerRow.Children.Add(delP);
-            panel.Children.Add(providerRow);
+            var add = UiKit.Secondary(Strings.T("ai.addProvider"), OnAiProviderAdd);
+            add.Height = 32;
+            add.MinWidth = 64;
 
-            panel.Children.Add(UiKit.Caption(Strings.T("ai.baseUrl")));
-            _aiBaseUrl = UiKit.Input(_settings != null ? _settings.AiBaseUrl : string.Empty);
+            _aiProviderList = new StackPanel();
+            _aiEditor = BuildAiEditor();
+
+            var list = UiKit.ListRows();
+            UiKit.AddSeparated(list, UiKit.ListRow(null, _aiEnabled, null), false);
+            UiKit.AddSeparated(list, SettingsRow(Strings.T("ai.providers"), add), false);
+            UiKit.AddSeparated(list, _aiProviderList, false);
+            UiKit.AddSeparated(list, _aiEditor, false);
+            UiKit.AddSeparated(list, SettingsNote(Strings.T("ai.key.local"), Strings.T("privacy.ai.off")), true);
+
+            var group = UiKit.InsetGroup(Strings.T("ai.title"), list);
+            group.Margin = new Thickness(0, 0, 0, 18);
+            return group;
+        }
+
+        /// <summary>
+        /// The in-place provider editor, built once and kept hidden until 新增 or 編輯 is clicked.
+        /// </summary>
+        private StackPanel BuildAiEditor()
+        {
+            var editor = new StackPanel { Visibility = Visibility.Collapsed };
+
+            _aiProviderName = UiKit.Input(string.Empty);
+            WithName(_aiProviderName, Strings.T("ai.name"));
+            _aiProviderName.Width = 260;
+
+            _aiBaseUrl = UiKit.Input(string.Empty);
             WithName(_aiBaseUrl, Strings.T("ai.baseUrl"));
-            panel.Children.Add(_aiBaseUrl);
+            _aiBaseUrl.Width = 260;
 
-            panel.Children.Add(UiKit.Caption(Strings.T("ai.apiKey")));
-            _aiApiKey = UiKit.Input(_settings != null ? _settings.AiApiKey : string.Empty);
+            // The key is masked by default; the reveal box swaps in a plain field on request.
+            _aiApiKey = UiKit.PasswordInput(string.Empty);
             WithName(_aiApiKey, Strings.T("ai.apiKey"));
-            panel.Children.Add(_aiApiKey);
+            _aiApiKey.Width = 200;
+            _aiApiKeyPlain = UiKit.Input(string.Empty);
+            WithName(_aiApiKeyPlain, Strings.T("ai.apiKey"));
+            _aiApiKeyPlain.Width = 200;
+            _aiApiKeyPlain.Visibility = Visibility.Collapsed;
+            _aiKeyReveal = UiKit.AppleCheck(Strings.T("ai.revealKey"));
+            _aiKeyReveal.Margin = new Thickness(10, 0, 0, 0);
+            _aiKeyReveal.Checked += (s, e) => ApplyKeyVisibility(true);
+            _aiKeyReveal.Unchecked += (s, e) => ApplyKeyVisibility(false);
+            var keyFields = new StackPanel { Orientation = Orientation.Horizontal };
+            keyFields.Children.Add(_aiApiKey);
+            keyFields.Children.Add(_aiApiKeyPlain);
+            keyFields.Children.Add(_aiKeyReveal);
 
-            panel.Children.Add(UiKit.Caption(Strings.T("ai.models")));
-            var modelRow = new StackPanel { Orientation = Orientation.Horizontal };
             _aiModel = UiKit.Select();
             WithName(_aiModel, Strings.T("ai.models"));
-            _aiModel.Width = 220;
-            modelRow.Children.Add(_aiModel);
-            var loadBtn = UiKit.Secondary(Strings.T("ai.loadModels"), OnAiLoadModels);
-            loadBtn.Margin = new Thickness(8, 0, 0, 0);
-            loadBtn.Height = 32;
-            loadBtn.MinWidth = 88;
-            modelRow.Children.Add(loadBtn);
-            panel.Children.Add(modelRow);
+            _aiModel.Width = 200;
+            var load = UiKit.Secondary(Strings.T("ai.loadModels"), OnAiLoadModels);
+            load.Margin = new Thickness(8, 0, 0, 0);
+            load.Height = 32;
+            load.MinWidth = 88;
+            var modelFields = new StackPanel { Orientation = Orientation.Horizontal };
+            modelFields.Children.Add(_aiModel);
+            modelFields.Children.Add(load);
+
+            var body = UiKit.ListRows();
+            UiKit.AddSeparated(body, SettingsRow(Strings.T("ai.name"), _aiProviderName), false);
+            UiKit.AddSeparated(body, SettingsRow(Strings.T("ai.baseUrl"), _aiBaseUrl), false);
+            UiKit.AddSeparated(body, SettingsRow(Strings.T("ai.apiKey"), keyFields), false);
+            UiKit.AddSeparated(body, SettingsRow(Strings.T("ai.models"), modelFields), true);
+            editor.Children.Add(body);
+
             _aiModelHint = new TextBlock
             {
                 Text = Strings.T("ai.models.empty"),
                 FontSize = UiKit.TypeCaption,
                 Foreground = Theme.MutedBrush,
-                Margin = new Thickness(2, 6, 0, 12)
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(16, 8, 16, 6)
             };
-            panel.Children.Add(_aiModelHint);
+            editor.Children.Add(_aiModelHint);
 
-            panel.Children.Add(new TextBlock
+            var done = UiKit.Primary(Strings.T("ai.done"), OnAiEditorDone);
+            done.MinWidth = 72;
+            var cancel = UiKit.Secondary(Strings.T("ai.cancel"), OnAiEditorCancel);
+            cancel.MinWidth = 72;
+            cancel.Margin = new Thickness(8, 0, 0, 0);
+            var actions = new StackPanel
             {
-                Text = Strings.T("ai.key.local"),
-                FontSize = UiKit.TypeCaption,
-                Foreground = Theme.MutedBrush,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 4, 0, 20)
-            });
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(16, 6, 16, 14)
+            };
+            actions.Children.Add(done);
+            actions.Children.Add(cancel);
+            editor.Children.Add(actions);
+            return editor;
+        }
 
-            panel.Children.Add(UiKit.Subtitle(Strings.T("privacy.title")));
-            panel.Children.Add(new TextBlock
-            {
-                Text = Strings.T("privacy.minimize"),
-                Foreground = Theme.MutedBrush,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 8)
-            });
-            panel.Children.Add(new TextBlock
-            {
-                Text = Strings.T("privacy.ai.off"),
-                Foreground = Theme.MutedBrush,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 12)
-            });
-            panel.Children.Add(UiKit.Caption(Strings.T("privacy.location")));
-            panel.Children.Add(new TextBlock
+        /// <summary>Block 6 — where the local data lives, and the two ways out.</summary>
+        private FrameworkElement BuildPrivacySettingsGroup()
+        {
+            var path = new TextBlock
             {
                 Text = JsonPaths.RootDirectory,
                 FontFamily = new FontFamily("Consolas"),
                 FontSize = UiKit.TypeCaption,
                 Foreground = Theme.InkBrush,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 12)
-            });
+                TextWrapping = TextWrapping.Wrap
+            };
 
-            var privacyButtons = new StackPanel { Orientation = Orientation.Horizontal };
-            privacyButtons.Children.Add(UiKit.Primary(Strings.T("privacy.export"), OnExportClick));
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            buttons.Children.Add(UiKit.Primary(Strings.T("privacy.export"), OnExportClick));
             var openFolder = UiKit.Secondary(Strings.T("privacy.openFolder"), OnOpenExportFolderClick);
             openFolder.Margin = new Thickness(8, 0, 8, 0);
-            privacyButtons.Children.Add(openFolder);
-            privacyButtons.Children.Add(UiKit.Destructive(Strings.T("privacy.clear"), OnClearClick));
-            panel.Children.Add(privacyButtons);
+            buttons.Children.Add(openFolder);
+            buttons.Children.Add(UiKit.Destructive(Strings.T("privacy.clear"), OnClearClick));
 
-            panel.Children.Add(BuildUpdateSection());
+            var actions = new StackPanel { Margin = new Thickness(16, 12, 16, 14) };
+            actions.Children.Add(buttons);
 
-            outer.Content = UiKit.Panel(panel);
-            var host = new Grid();
-            host.Children.Add(outer);
-            return host;
+            return SettingsGroup(
+                Strings.T("privacy.title"),
+                SettingsNote(Strings.T("privacy.minimize")),
+                SettingsStackedRow(Strings.T("privacy.location"), path),
+                actions);
         }
 
         /// <summary>
@@ -1118,6 +1256,12 @@ namespace OutlookAiHelper.UI
         /// to a screen reader, which would otherwise announce a bare "edit" or "combo box".
         /// </summary>
         private static TextBox WithName(TextBox field, string name)
+        {
+            AutomationProperties.SetName(field, name);
+            return field;
+        }
+
+        private static PasswordBox WithName(PasswordBox field, string name)
         {
             AutomationProperties.SetName(field, name);
             return field;
@@ -2217,53 +2361,94 @@ namespace OutlookAiHelper.UI
             }
         }
 
+        /// <summary>Rebuilds the provider rows and keeps the editor and the mirrors in step.</summary>
         private void RefreshAiProviderCombo()
         {
-            if (_aiProviders == null || _settings == null)
+            if (_aiProviderList == null)
             {
                 return;
             }
 
             EnsureAiProviders();
-            _aiUiSync = true;
-            try
+            _aiProviderList.Children.Clear();
+            var providers = _settings.AiProviders;
+            for (var i = 0; i < providers.Count; i++)
             {
-                _aiProviders.Items.Clear();
-                foreach (var pr in _settings.AiProviders)
-                {
-                    var label = string.IsNullOrEmpty(pr.Name) ? "Provider" : pr.Name;
-                    if (!string.IsNullOrEmpty(pr.BaseUrl))
-                    {
-                        label = label + " — " + pr.BaseUrl.Trim().TrimEnd('/');
-                    }
-
-                    _aiProviders.Items.Add(label);
-                }
-
-                var selected = _settings.GetSelectedProvider();
-                var idx = selected != null ? _settings.AiProviders.IndexOf(selected) : 0;
-                _aiProviders.SelectedIndex = idx < 0 ? 0 : idx;
-                PushProviderToFields();
+                UiKit.AddSeparated(_aiProviderList, BuildAiProviderRow(providers[i]), i == providers.Count - 1);
             }
-            finally
+
+            PushProviderToFields();
+            var selected = _settings.GetSelectedProvider();
+            if (selected != null && _aiEditor != null && _aiEditor.Visibility == Visibility.Visible)
             {
-                _aiUiSync = false;
+                FillAiEditor(selected);
             }
         }
 
+        /// <summary>One provider row: its name and URL, with 編輯 / 移除 on the right.</summary>
+        private FrameworkElement BuildAiProviderRow(AiProviderProfile pr)
+        {
+            var body = new StackPanel();
+            body.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrEmpty(pr.Name) ? "Provider" : pr.Name,
+                FontSize = UiKit.TypeBody,
+                Foreground = Theme.InkBrush,
+                TextWrapping = TextWrapping.Wrap
+            });
+            if (!string.IsNullOrEmpty(pr.BaseUrl))
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = pr.BaseUrl.Trim().TrimEnd('/'),
+                    FontSize = UiKit.TypeCaption,
+                    Foreground = Theme.MutedBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 3, 0, 0)
+                });
+            }
+
+            if (_settings != null && _settings.SelectedAiProviderId == pr.Id)
+            {
+                body.Children.Add(new TextBlock
+                {
+                    Text = Strings.T("ai.active"),
+                    FontSize = UiKit.TypeCaption,
+                    Foreground = Theme.AccentBrush,
+                    Margin = new Thickness(0, 3, 0, 0)
+                });
+            }
+
+            var provider = pr;
+            var actions = new StackPanel { Orientation = Orientation.Horizontal };
+            var edit = UiKit.Secondary(Strings.T("ai.edit"), (s, e) => BeginAiEdit(provider));
+            edit.Height = 30;
+            edit.MinWidth = 56;
+            var remove = UiKit.Secondary(Strings.T("ai.remove"), (s, e) => RemoveAiProvider(provider));
+            remove.Height = 30;
+            remove.MinWidth = 56;
+            remove.Margin = new Thickness(8, 0, 0, 0);
+            actions.Children.Add(edit);
+            actions.Children.Add(remove);
+
+            return UiKit.ListRow(null, body, actions);
+        }
+
+        /// <summary>Mirrors the selected provider into the editor fields.</summary>
         private void PushProviderToFields()
         {
             var pr = _settings != null ? _settings.GetSelectedProvider() : null;
+            if (_aiProviderName != null)
+            {
+                _aiProviderName.Text = pr != null && !string.IsNullOrEmpty(pr.Name) ? pr.Name : "Provider";
+            }
+
             if (_aiBaseUrl != null)
             {
                 _aiBaseUrl.Text = pr != null ? pr.BaseUrl : string.Empty;
             }
 
-            if (_aiApiKey != null)
-            {
-                _aiApiKey.Text = pr != null ? pr.ApiKey : string.Empty;
-            }
-
+            SetAiKeyUiValue(pr != null ? pr.ApiKey : string.Empty);
             FillModelCombo(pr);
         }
 
@@ -2309,9 +2494,13 @@ namespace OutlookAiHelper.UI
             }
         }
 
+        /// <summary>
+        /// Applies what the open editor shows to the selected provider. Skipped when the editor is
+        /// closed: the stored profile is then the truth and the fields are only mirrors of it.
+        /// </summary>
         private void SyncSelectedProviderFromUi()
         {
-            if (_aiUiSync || _settings == null)
+            if (_aiUiSync || _settings == null || !IsAiEditorOpen())
             {
                 return;
             }
@@ -2323,8 +2512,14 @@ namespace OutlookAiHelper.UI
                 return;
             }
 
+            var name = _aiProviderName != null ? _aiProviderName.Text.Trim() : string.Empty;
+            if (name.Length > 0)
+            {
+                pr.Name = name;
+            }
+
             pr.BaseUrl = _aiBaseUrl != null ? _aiBaseUrl.Text.Trim() : pr.BaseUrl;
-            pr.ApiKey = _aiApiKey != null ? _aiApiKey.Text.Trim() : pr.ApiKey;
+            pr.ApiKey = AiKeyUiValue().Trim();
             if (_aiModel != null && _aiModel.SelectedItem != null)
             {
                 pr.Model = Convert.ToString(_aiModel.SelectedItem);
@@ -2348,51 +2543,201 @@ namespace OutlookAiHelper.UI
             }
         }
 
-        private void OnAiProviderSelected()
+        /// <summary>編輯: opens the in-place editor on one stored profile.</summary>
+        private void BeginAiEdit(AiProviderProfile pr)
         {
-            if (_aiUiSync || _aiProviders == null || _settings == null)
-            {
-                return;
-            }
-
-            SyncSelectedProviderFromUi();
-            var idx = _aiProviders.SelectedIndex;
-            EnsureAiProviders();
-            if (idx >= 0 && idx < _settings.AiProviders.Count)
-            {
-                _settings.SelectedAiProviderId = _settings.AiProviders[idx].Id;
-                PushProviderToFields();
-            }
-        }
-
-        private void OnAiProviderAdd(object sender, RoutedEventArgs e)
-        {
-            EnsureAiProviders();
-            SyncSelectedProviderFromUi();
-            var n = _settings.AiProviders.Count + 1;
-            var pr = new AiProviderProfile { Name = "Provider " + n };
-            _settings.AiProviders.Add(pr);
-            _settings.SelectedAiProviderId = pr.Id;
-            RefreshAiProviderCombo();
-        }
-
-        private void OnAiProviderRemove(object sender, RoutedEventArgs e)
-        {
-            EnsureAiProviders();
-            if (_settings.AiProviders.Count <= 1)
-            {
-                return;
-            }
-
-            var pr = _settings.GetSelectedProvider();
             if (pr == null)
             {
                 return;
             }
 
+            EnsureAiProviders();
+            _aiEditingIsNew = false;
+            _settings.SelectedAiProviderId = pr.Id;
+            FillAiEditor(pr);
+            if (_aiEditor != null)
+            {
+                _aiEditor.Visibility = Visibility.Visible;
+            }
+
+            ApplyKeyVisibility(IsKeyRevealed());
+            RefreshAiProviderCombo();
+        }
+
+        /// <summary>Copies a stored profile into the editor fields.</summary>
+        private void FillAiEditor(AiProviderProfile pr)
+        {
+            if (pr == null)
+            {
+                return;
+            }
+
+            _aiUiSync = true;
+            try
+            {
+                if (_aiProviderName != null)
+                {
+                    _aiProviderName.Text = !string.IsNullOrEmpty(pr.Name) ? pr.Name : "Provider";
+                }
+
+                if (_aiBaseUrl != null)
+                {
+                    _aiBaseUrl.Text = pr.BaseUrl ?? string.Empty;
+                }
+
+                SetAiKeyUiValue(pr.ApiKey);
+                FillModelCombo(pr);
+            }
+            finally
+            {
+                _aiUiSync = false;
+            }
+        }
+
+        /// <summary>新增: appends an empty profile and opens its editor straight away.</summary>
+        private void OnAiProviderAdd(object sender, RoutedEventArgs e)
+        {
+            EnsureAiProviders();
+            var n = _settings.AiProviders.Count + 1;
+            var pr = new AiProviderProfile { Name = "Provider " + n };
+            _settings.AiProviders.Add(pr);
+            _settings.SelectedAiProviderId = pr.Id;
+            BeginAiEdit(pr);
+            _aiEditingIsNew = true;
+        }
+
+        /// <summary>移除: drops one profile; the last one stays, so the list is never empty.</summary>
+        private void RemoveAiProvider(AiProviderProfile pr)
+        {
+            EnsureAiProviders();
+            if (pr == null)
+            {
+                return;
+            }
+
+            if (_settings.AiProviders.Count <= 1)
+            {
+                if (_statusText != null)
+                {
+                    _statusText.Text = Strings.T("ai.remove.last");
+                }
+
+                return;
+            }
+
             _settings.AiProviders.Remove(pr);
             _settings.SelectedAiProviderId = _settings.AiProviders[0].Id;
+            _aiEditingIsNew = false;
+            HideAiEditor();
             RefreshAiProviderCombo();
+        }
+
+        /// <summary>完成: keeps what was typed, then closes the editor.</summary>
+        private void OnAiEditorDone(object sender, RoutedEventArgs e)
+        {
+            SyncSelectedProviderFromUi();
+            _aiEditingIsNew = false;
+            HideAiEditor();
+            RefreshAiProviderCombo();
+        }
+
+        /// <summary>
+        /// 取消: drops what was typed. A profile that was added in this same edit and never
+        /// confirmed goes with it, so a cancelled 新增 does not leave an empty row behind.
+        /// </summary>
+        private void OnAiEditorCancel(object sender, RoutedEventArgs e)
+        {
+            EnsureAiProviders();
+            HideAiEditor();
+            var pr = _settings.GetSelectedProvider();
+            if (_aiEditingIsNew && pr != null && _settings.AiProviders.Count > 1)
+            {
+                _settings.AiProviders.Remove(pr);
+                _settings.SelectedAiProviderId = _settings.AiProviders[0].Id;
+                pr = _settings.GetSelectedProvider();
+            }
+
+            _aiEditingIsNew = false;
+            FillAiEditor(pr);
+            RefreshAiProviderCombo();
+        }
+
+        private bool IsAiEditorOpen()
+        {
+            return _aiEditor != null && _aiEditor.Visibility == Visibility.Visible;
+        }
+
+        private void HideAiEditor()
+        {
+            // Re-mask first: a key revealed for one profile must not still be on screen for the next.
+            if (_aiKeyReveal != null)
+            {
+                _aiKeyReveal.IsChecked = false;
+            }
+
+            if (_aiEditor != null)
+            {
+                _aiEditor.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        /// <summary>Writes a key into both the masked field and its revealed twin.</summary>
+        private void SetAiKeyUiValue(string key)
+        {
+            var value = key ?? string.Empty;
+            if (_aiApiKey != null)
+            {
+                _aiApiKey.Password = value;
+            }
+
+            if (_aiApiKeyPlain != null)
+            {
+                _aiApiKeyPlain.Text = value;
+            }
+        }
+
+        /// <summary>The key exactly as the user can see it right now.</summary>
+        private string AiKeyUiValue()
+        {
+            if (IsKeyRevealed())
+            {
+                return _aiApiKeyPlain != null ? _aiApiKeyPlain.Text : string.Empty;
+            }
+
+            return _aiApiKey != null ? _aiApiKey.Password : string.Empty;
+        }
+
+        private bool IsKeyRevealed()
+        {
+            return _aiKeyReveal != null && _aiKeyReveal.IsChecked == true;
+        }
+
+        /// <summary>Moves the key between the masked field and the revealed one.</summary>
+        private void ApplyKeyVisibility(bool revealed)
+        {
+            if (_aiApiKey == null || _aiApiKeyPlain == null || !IsAiEditorOpen())
+            {
+                return;
+            }
+
+            var value = revealed ? _aiApiKey.Password : _aiApiKeyPlain.Text;
+            value = value ?? string.Empty;
+            if (revealed)
+            {
+                _aiApiKeyPlain.Text = value;
+            }
+            else
+            {
+                _aiApiKey.Password = value;
+            }
+
+            _aiApiKey.Visibility = revealed ? Visibility.Collapsed : Visibility.Visible;
+            _aiApiKeyPlain.Visibility = revealed ? Visibility.Visible : Visibility.Collapsed;
+            if (revealed)
+            {
+                _aiApiKeyPlain.Focus();
+                _aiApiKeyPlain.CaretIndex = _aiApiKeyPlain.Text.Length;
+            }
         }
 
         private void OnAiLoadModels(object sender, RoutedEventArgs e)

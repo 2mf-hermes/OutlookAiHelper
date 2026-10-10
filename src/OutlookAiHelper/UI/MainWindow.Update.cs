@@ -27,8 +27,7 @@ namespace OutlookAiHelper.UI
         /// <summary>Settings section: the running build, a check button, and the opt-in toggle.</summary>
         private Panel BuildUpdateSection()
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            panel.Children.Add(UiKit.Subtitle(Strings.T("update.section")));
+            var panel = new StackPanel { Margin = new Thickness(16, 12, 16, 0) };
             panel.Children.Add(new TextBlock
             {
                 Text = Strings.T("update.current") + "   v" + AppInfo.Version,
