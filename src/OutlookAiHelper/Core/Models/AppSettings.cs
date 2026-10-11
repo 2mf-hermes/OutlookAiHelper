@@ -39,6 +39,8 @@ namespace OutlookAiHelper.Core.Models
             AiApiKey = string.Empty;
             AiProviders = new List<AiProviderProfile>();
             SelectedAiProviderId = string.Empty;
+            MailSources = new List<MailSourceProfile>();
+            ActiveMailSourceId = string.Empty;
         }
 
         public int SchemaVersion { get; set; }
@@ -76,6 +78,25 @@ namespace OutlookAiHelper.Core.Models
         /// </summary>
         public string MailSort { get; set; }
 
+        /// <summary>
+        /// The mail sources the user has added. Empty is the normal state of a fresh
+        /// install and of every install that predates the feature: the app then reads the
+        /// Outlook desktop client on this PC, exactly as it always did.
+        /// </summary>
+        public List<MailSourceProfile> MailSources { get; set; }
+
+        /// <summary>
+        /// Id of the source scans read from. Unknown or empty means "the first usable one",
+        /// so removing the active source cannot leave the app pointing at nothing.
+        /// </summary>
+        public string ActiveMailSourceId { get; set; }
+
+        /// <summary>
+        /// Whether the first-run step that asks where to read mail has been answered. A
+        /// settings file written before sources existed reads back as false.
+        /// </summary>
+        public bool SourceChoiceAsked { get; set; }
+
         public AiProviderProfile GetSelectedProvider()
         {
             if (AiProviders == null)
@@ -95,6 +116,40 @@ namespace OutlookAiHelper.Core.Models
             }
 
             return AiProviders.Count > 0 ? AiProviders[0] : null;
+        }
+
+        /// <summary>
+        /// The source scans read from. Synthesises the local source when nothing is
+        /// configured, so every caller has something to read and an install that never
+        /// touched the source list keeps working untouched.
+        /// </summary>
+        public MailSourceProfile GetActiveMailSource()
+        {
+            if (MailSources == null || MailSources.Count == 0)
+            {
+                return MailSourceProfile.Local();
+            }
+
+            if (!string.IsNullOrEmpty(ActiveMailSourceId))
+            {
+                foreach (var source in MailSources)
+                {
+                    if (source != null && source.Id == ActiveMailSourceId)
+                    {
+                        return source;
+                    }
+                }
+            }
+
+            foreach (var source in MailSources)
+            {
+                if (source != null)
+                {
+                    return source;
+                }
+            }
+
+            return MailSourceProfile.Local();
         }
 
         public UiLanguage ToUiLanguage()

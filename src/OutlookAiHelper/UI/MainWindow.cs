@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Automation;
+using OutlookAiHelper.Adapters.Mail;
 using OutlookAiHelper.Adapters.Outlook;
 using OutlookAiHelper.Adapters.Storage;
 using OutlookAiHelper.Application;
@@ -23,7 +24,17 @@ namespace OutlookAiHelper.UI
     public sealed partial class MainWindow : Window
     {
         private readonly RuleOptions _ruleOptions = RuleOptions.CreateDefault();
-        private readonly OutlookComMailReader _reader = new OutlookComMailReader();
+        private readonly MailSourceRuntime _mailSources = new MailSourceRuntime(new OutlookComMailReader());
+
+        /// <summary>
+        /// The reader for whichever source is active. Resolved on each call rather than
+        /// held, so switching source takes effect on the next scan; while local Outlook is
+        /// the only implemented kind this is always the Outlook COM reader.
+        /// </summary>
+        private IMailReader _reader
+        {
+            get { return _mailSources.Reader; }
+        }
         private readonly JsonOverrideStore _overrideStore = new JsonOverrideStore();
         private readonly JsonSettingsStore _settingsStore = new JsonSettingsStore();
         private readonly PrivacyUseCase _privacy;
@@ -124,6 +135,7 @@ namespace OutlookAiHelper.UI
             // acrylic disabled — liquid glass painted with layered brushes
 
             _settings = _settingsStore.Load();
+            _mailSources.Configure(_settings);
             Strings.Language = _settings.ToUiLanguage();
             SyncRulesFromSettings(_settings);
             _privacy = new PrivacyUseCase(JsonPaths.RootDirectory);

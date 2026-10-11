@@ -16,6 +16,7 @@ namespace OutlookAiHelper.TestHost
             failed += MailThreadTests.Run();
             failed += MailOrderingTests.Run();
             failed += UpdateTests.Run();
+            failed += MailSourceTests.Run();
             if (failed == 0)
             {
                 Console.WriteLine("ALL TESTS PASSED");

@@ -66,6 +66,21 @@ namespace OutlookAiHelper.Adapters.Storage
         /// <summary>The mail ordering by name; absent from files written before it existed.</summary>
         [DataMember(Order = 16)]
         public string MailSort { get; set; }
+
+        /// <summary>
+        /// The mail sources the user added. Absent from a file written before them, which
+        /// reads back as an empty list and resolves to local Outlook.
+        /// </summary>
+        [DataMember(Order = 17)]
+        public List<MailSourceRecord> MailSources { get; set; }
+
+        /// <summary>Id of the source scans read from; unknown or absent means the first one.</summary>
+        [DataMember(Order = 18)]
+        public string ActiveMailSourceId { get; set; }
+
+        /// <summary>Whether the first-run "where should I read mail?" step was answered.</summary>
+        [DataMember(Order = 19)]
+        public bool SourceChoiceAsked { get; set; }
     }
 
     [DataContract]
@@ -88,6 +103,30 @@ namespace OutlookAiHelper.Adapters.Storage
 
         [DataMember(Order = 6)]
         public List<string> CachedModels { get; set; }
+    }
+
+    /// <summary>
+    /// One stored mail source. Deliberately holds no credential: a cloud source's refresh
+    /// token is not kept in the settings file, which is plain JSON under %LocalAppData%.
+    /// </summary>
+    [DataContract]
+    public sealed class MailSourceRecord
+    {
+        [DataMember(Order = 1)]
+        public string Id { get; set; }
+
+        /// <summary>
+        /// The kind by name (see MailSourceProfile.KindToText) rather than by number, so a
+        /// kind written by a newer build is not misread as the local one.
+        /// </summary>
+        [DataMember(Order = 2)]
+        public string Kind { get; set; }
+
+        [DataMember(Order = 3)]
+        public string Name { get; set; }
+
+        [DataMember(Order = 4)]
+        public string AccountUpn { get; set; }
     }
 
     public sealed class JsonSettingsStore : ISettingsStore
@@ -142,7 +181,10 @@ namespace OutlookAiHelper.Adapters.Storage
                         SelectedAiProviderId = doc.SelectedAiProviderId ?? string.Empty,
                         CheckForUpdatesOnStartup = doc.CheckForUpdatesOnStartup,
                         AutoRefreshMinutes = NormalizeAutoRefreshMinutes(doc.AutoRefreshMinutes),
-                        MailSort = string.IsNullOrEmpty(doc.MailSort) ? AppSettings.DefaultMailSort : doc.MailSort
+                        MailSort = string.IsNullOrEmpty(doc.MailSort) ? AppSettings.DefaultMailSort : doc.MailSort,
+                        MailSources = FromSourceRecords(doc.MailSources),
+                        ActiveMailSourceId = doc.ActiveMailSourceId ?? string.Empty,
+                        SourceChoiceAsked = doc.SourceChoiceAsked
                     };
                 }
             }
@@ -178,7 +220,10 @@ namespace OutlookAiHelper.Adapters.Storage
                 SelectedAiProviderId = settings.SelectedAiProviderId ?? string.Empty,
                 CheckForUpdatesOnStartup = settings.CheckForUpdatesOnStartup,
                 AutoRefreshMinutes = NormalizeAutoRefreshMinutes(settings.AutoRefreshMinutes),
-                MailSort = string.IsNullOrEmpty(settings.MailSort) ? AppSettings.DefaultMailSort : settings.MailSort
+                MailSort = string.IsNullOrEmpty(settings.MailSort) ? AppSettings.DefaultMailSort : settings.MailSort,
+                MailSources = ToSourceRecords(settings.MailSources),
+                ActiveMailSourceId = settings.ActiveMailSourceId ?? string.Empty,
+                SourceChoiceAsked = settings.SourceChoiceAsked
             };
 
             using (var stream = File.Create(_path))
@@ -261,6 +306,60 @@ namespace OutlookAiHelper.Adapters.Storage
                     ApiKey = item.ApiKey,
                     Model = item.Model,
                     CachedModels = item.CachedModels ?? new List<string>()
+                });
+            }
+
+            return list;
+        }
+
+        private static List<MailSourceProfile> FromSourceRecords(List<MailSourceRecord> records)
+        {
+            var list = new List<MailSourceProfile>();
+            if (records == null)
+            {
+                return list;
+            }
+
+            foreach (var record in records)
+            {
+                if (record == null || string.IsNullOrEmpty(record.Id))
+                {
+                    continue;
+                }
+
+                list.Add(new MailSourceProfile
+                {
+                    Id = record.Id,
+                    Kind = MailSourceProfile.ParseKind(record.Kind),
+                    Name = record.Name ?? string.Empty,
+                    AccountUpn = record.AccountUpn ?? string.Empty
+                });
+            }
+
+            return list;
+        }
+
+        private static List<MailSourceRecord> ToSourceRecords(List<MailSourceProfile> profiles)
+        {
+            var list = new List<MailSourceRecord>();
+            if (profiles == null)
+            {
+                return list;
+            }
+
+            foreach (var profile in profiles)
+            {
+                if (profile == null || string.IsNullOrEmpty(profile.Id))
+                {
+                    continue;
+                }
+
+                list.Add(new MailSourceRecord
+                {
+                    Id = profile.Id,
+                    Kind = MailSourceProfile.KindToText(profile.Kind),
+                    Name = profile.Name ?? string.Empty,
+                    AccountUpn = profile.AccountUpn ?? string.Empty
                 });
             }
 
