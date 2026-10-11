@@ -113,8 +113,27 @@ namespace OutlookAiHelper.Tests
                 && GraphApp.MailFoldersUrl == "https://graph.microsoft.com/v1.0/me/mailFolders");
 
             failed += Check("the UI can never be told a source is available that the factory refuses to build", () =>
-                MailReaderFactory.IsImplemented(MailSourceKind.Graph, "11111111-2222-3333-4444-555555555555")
-                    == (MailReaderFactory.Create(MailSourceKind.Graph, null) != null));
+            {
+                // Both sides are asked with one registration, which is what makes this a statement
+                // instead of a tautology: while the cloud path was switched off both sides were
+                // false for the same trivial reason. Now the left side is true for a registration
+                // this build can use, so the right side has to be too -- as an actual reader.
+                //
+                // A kind on its own stays null for a cloud source, and deliberately so: without the
+                // source there is no stored sign-in to look for, and a reader that guessed would fail
+                // at the first request with "not signed in" rather than not being built at all.
+                var id = "11111111-2222-3333-4444-555555555555";
+                var source = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph };
+                var built = MailReaderFactory.Create(source, null, id) as GraphMailReader;
+
+                return MailReaderFactory.IsImplemented(MailSourceKind.Graph, id)
+                    && built != null
+                    && built.ClientId == id
+                    && MailReaderFactory.Create(MailSourceKind.Graph, null) == null;
+            });
+
+            failed += Check("no registration ships with this build, so no cloud source is offered yet", () =>
+                !MailReaderFactory.IsImplemented(MailSourceKind.Graph));
 
             failed += Check("a source with no client id is never offered, but the local mailbox always is", () =>
                 !MailReaderFactory.IsImplemented(MailSourceKind.Graph, "")

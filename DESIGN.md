@@ -688,8 +688,8 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 
 - `IMailReader` 收納 `ProbeInbox`／`TryOpenInOutlook`，介面外不再有 COM 專屬呼叫；`OutlookComMailReader` 全 repo 只剩一處建構。
 - `MailSourceProfile`：`Kind` 以**文字**儲存，舊版讀到不認識的種類不會誤判成本機。
-- `MailReaderFactory`：未實作的種類回 `null` 而非丟例外。
-- `MailSourceRuntime`：四條退化路徑一律退回本機（清單為空／找不到 id／種類未實作／設定為 null），因為「沒有可讀信箱」與「Outlook 壞了」在畫面上長得一樣。
+- `MailReaderFactory`：未實作的種類回 `null` 而非丟例外；v1.2.0 起依來源與註冊建出雲端讀取器，沒有可用的註冊（或來源 id 不可能是一個檔名）一樣回 `null`，呼叫端一律退回本機。
+- `MailSourceRuntime`：五條退化路徑一律退回本機（清單為空／找不到 id／種類未實作／設定為 null／雲端來源沒有可用註冊），因為「沒有可讀信箱」與「Outlook 壞了」在畫面上長得一樣；並記住已建好的讀取器，只在切換來源時重建（否則每次掃描都會重新登入，也會忘記登入曾被拒絕）。
 - 設定檔新增 `MailSources`／`ActiveMailSourceId`／`SourceChoiceAsked`；舊設定檔可直接讀（新增欄位向後相容）。
 
 #### 待驗（要有真實帳號才能量測，在此之前不得當成結果陳述）

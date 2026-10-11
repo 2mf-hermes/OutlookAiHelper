@@ -55,7 +55,14 @@ namespace OutlookAiHelper.Adapters.Storage
             return Path.Combine(SecretsDirectory, "refresh-" + sourceId + ".dat");
         }
 
-        private static bool IsSafeSourceId(string sourceId)
+        /// <summary>
+        /// True when the id is a plain identifier, the only kind a source this app wrote can have.
+        ///
+        /// Exposed because the caller that decides whether a source gets a reader at all has to ask
+        /// this before it asks for a path: "no reader" is an answer the UI can use, and an exception
+        /// thrown out of a property getter is not.
+        /// </summary>
+        public static bool IsSafeSourceId(string sourceId)
         {
             if (string.IsNullOrEmpty(sourceId) || sourceId.Length > 64)
             {

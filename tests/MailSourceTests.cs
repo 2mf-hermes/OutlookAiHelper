@@ -11,8 +11,9 @@ namespace OutlookAiHelper.Tests
 {
     /// <summary>
     /// Covers the mail-source skeleton: what a settings file written before sources
-    /// existed resolves to, how a source survives a save/load, and that neither a missing
-    /// source nor a kind this build cannot read can leave the app without a reader.
+    /// existed resolves to, how a source survives a save/load, and that nothing -- a missing
+    /// source, an unknown kind, a cloud source with no usable registration, an id that could
+    /// not name a file -- leaves the app without a reader.
     /// </summary>
     public static class MailSourceTests
     {
@@ -44,6 +45,15 @@ namespace OutlookAiHelper.Tests
                 return false;
             }
         }
+
+        /// <summary>
+        /// A sample registration id, the same in every check that needs one.
+        ///
+        /// A client id is public information -- a public client has no secret, which is why the
+        /// device-code flow fits an app anyone can install -- and this particular one belongs to
+        /// nobody, so it stands in for the real one without standing in for anything secret.
+        /// </summary>
+        private const string CloudId = "9a1c0e5b-2f4d-4a6e-9b31-7c5d0e2a8f14";
 
         public static int Run()
         {
@@ -169,13 +179,28 @@ namespace OutlookAiHelper.Tests
                         && runtime.ActiveProfile.Kind == MailSourceKind.LocalOutlook;
                 });
 
-                failed += Check("an unimplemented kind resolves to no reader", () =>
+                failed += Check("an unknown kind resolves to no reader, and the local one is handed back", () =>
                 {
                     var local = new FakeReader();
-                    return !MailReaderFactory.IsImplemented(MailSourceKind.Graph)
+                    var unknown = new MailSourceProfile { Id = "unknown-1", Kind = (MailSourceKind)99 };
+                    return !MailReaderFactory.IsImplemented((MailSourceKind)99)
+                        && !MailReaderFactory.IsImplemented((MailSourceKind)99, CloudId)
                         && MailReaderFactory.IsImplemented(MailSourceKind.LocalOutlook)
-                        && MailReaderFactory.Create(MailSourceKind.Graph, local) == null
-                        && ReferenceEquals(MailReaderFactory.Create(MailSourceKind.LocalOutlook, local), local);
+                        && MailReaderFactory.Create((MailSourceKind)99, local) == null
+                        && MailReaderFactory.Create(unknown, local, CloudId) == null
+                        && ReferenceEquals(MailReaderFactory.Create(MailSourceKind.LocalOutlook, local), local)
+                        && ReferenceEquals(MailReaderFactory.Create(MailSourceProfile.Local(), local, CloudId), local);
+                });
+
+                failed += Check("a cloud source with no usable registration is never built", () =>
+                {
+                    var cloud = new MailSourceProfile { Kind = MailSourceKind.Graph, Name = "cloud" };
+                    return MailReaderFactory.Create(cloud, null, null) == null
+                        && MailReaderFactory.Create(cloud, null, string.Empty) == null
+                        && MailReaderFactory.Create(cloud, null, "placeholder") == null
+                        && MailReaderFactory.Create(null, null, CloudId) == null
+                        && !MailReaderFactory.IsImplemented(MailSourceKind.Graph, string.Empty)
+                        && !MailReaderFactory.IsImplemented(MailSourceKind.Graph, "placeholder");
                 });
 
                 failed += Check("the port carries the probe and the open-item call", () =>
@@ -244,6 +269,84 @@ namespace OutlookAiHelper.Tests
                     }
 
                     return kinds.Length > 0;
+                });
+
+                failed += Check("a cloud source resolves to the cloud reader, and to the same one twice", () =>
+                {
+                    var cloud = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph, Name = "cloud" };
+                    var s = AppSettings.CreateDefault();
+                    s.MailSources.Add(MailSourceProfile.Local());
+                    s.MailSources.Add(cloud);
+                    s.ActiveMailSourceId = cloud.Id;
+
+                    var local = new FakeReader();
+                    var runtime = new MailSourceRuntime(local, CloudId);
+                    runtime.Configure(s);
+
+                    var reader = runtime.Reader as GraphMailReader;
+                    return runtime.ActiveProfile.Id == cloud.Id
+                        && !runtime.RequiresSta
+                        && reader != null
+                        && reader.ClientId == CloudId
+                        && ReferenceEquals(runtime.Reader, reader)
+                        && !ReferenceEquals(runtime.Reader, local);
+                });
+
+                failed += Check("switching back to the local source hands the local reader back", () =>
+                {
+                    var cloud = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph, Name = "cloud" };
+                    var local = new FakeReader();
+                    var runtime = new MailSourceRuntime(local, CloudId);
+
+                    var onCloud = AppSettings.CreateDefault();
+                    onCloud.MailSources.Add(MailSourceProfile.Local());
+                    onCloud.MailSources.Add(cloud);
+                    onCloud.ActiveMailSourceId = cloud.Id;
+                    runtime.Configure(onCloud);
+                    var built = runtime.Reader as GraphMailReader;
+
+                    var onLocal = AppSettings.CreateDefault();
+                    onLocal.MailSources.Add(MailSourceProfile.Local());
+                    onLocal.ActiveMailSourceId = MailSourceProfile.LocalId;
+                    runtime.Configure(onLocal);
+
+                    return built != null
+                        && ReferenceEquals(runtime.Reader, local)
+                        && runtime.ActiveProfile.Id == MailSourceProfile.LocalId;
+                });
+
+                failed += Check("a cloud source this build cannot read falls back to the local mailbox", () =>
+                {
+                    var cloud = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph, Name = "cloud" };
+                    var s = AppSettings.CreateDefault();
+                    s.MailSources.Add(MailSourceProfile.Local());
+                    s.MailSources.Add(cloud);
+                    s.ActiveMailSourceId = cloud.Id;
+
+                    var local = new FakeReader();
+                    var runtime = new MailSourceRuntime(local, string.Empty);
+                    runtime.Configure(s);
+
+                    return ReferenceEquals(runtime.Reader, local)
+                        && runtime.ActiveProfile.Id == MailSourceProfile.LocalId
+                        && runtime.RequiresSta;
+                });
+
+                failed += Check("a source id that could not name a file gets no reader", () =>
+                {
+                    var escaping = new MailSourceProfile { Id = "..\\..\\secrets", Kind = MailSourceKind.Graph };
+                    var slashed = new MailSourceProfile { Id = "a/b", Kind = MailSourceKind.Graph };
+                    var empty = new MailSourceProfile { Id = string.Empty, Kind = MailSourceKind.Graph };
+                    var tooLong = new MailSourceProfile { Id = new string('x', 65), Kind = MailSourceKind.Graph };
+                    var plain = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph };
+
+                    return MailReaderFactory.Create(escaping, null, CloudId) == null
+                        && MailReaderFactory.Create(slashed, null, CloudId) == null
+                        && MailReaderFactory.Create(empty, null, CloudId) == null
+                        && MailReaderFactory.Create(tooLong, null, CloudId) == null
+                        && MailReaderFactory.Create(plain, null, CloudId) != null
+                        && JsonPaths.IsSafeSourceId("cloud-1")
+                        && !JsonPaths.IsSafeSourceId(escaping.Id);
                 });
 
                 failed += Check("removing the active source falls back to the local mailbox", () =>
