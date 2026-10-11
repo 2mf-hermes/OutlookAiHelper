@@ -97,6 +97,7 @@ namespace OutlookAiHelper.UI
         private Panel _quadrantPage;
         private Panel _todoPage;
         private Panel _settingsPage;
+        private StackPanel _sourceList;
         private Quadrant _filter = Quadrant.Q1UrgentImportant;
         private bool _filterAll;
         private string _todoFilterMode = "Open";
@@ -169,6 +170,10 @@ namespace OutlookAiHelper.UI
                 }
 
                 _autoScanDone = true;
+                // First run only: ask which mailbox to read, before the pre-scan fills the
+                // list. Does nothing in a build that cannot offer a second source, so it
+                // never blocks startup.
+                AskForMailSourceOnFirstRun();
                 try
                 {
                     await Dispatcher.InvokeAsync(() =>
@@ -933,6 +938,335 @@ namespace OutlookAiHelper.UI
             return grid;
         }
 
+        /// <summary>
+        /// The source block: which mailbox every other block acts on, so it is the first
+        /// card on the page. A source you are not reading is one click away, and the
+        /// local Outlook stays on the list as the way back.
+        /// </summary>
+        private FrameworkElement BuildSourceSettingsGroup()
+        {
+            _sourceList = UiKit.ListRows();
+            FillSourceList();
+
+            var list = UiKit.ListRows();
+            UiKit.AddSeparated(list, _sourceList, false);
+
+            if (CanAddSource())
+            {
+                var add = UiKit.Secondary(Strings.T("source.add"), OnAddSourceClick);
+                var bar = new StackPanel { Orientation = Orientation.Horizontal };
+                bar.Children.Add(add);
+                UiKit.AddSeparated(list, bar, false);
+            }
+            else
+            {
+                // No cloud reader in this build, so there is nothing to add and nothing to
+                // sign in to. Say why the list has a single entry rather than offering a
+                // control that could only fail.
+                UiKit.AddSeparated(list, SettingsNote(Strings.T("source.note.localOnly")), false);
+            }
+
+            UiKit.AddSeparated(list, SettingsNote(Strings.T("source.note.scope")), true);
+
+            var group = UiKit.InsetGroup(Strings.T("settings.section.source"), list);
+            group.Margin = new Thickness(0, 0, 0, 18);
+            return group;
+        }
+
+        /// <summary>True when this build can offer a source other than the local one.</summary>
+        private static bool CanAddSource()
+        {
+            return MailSourceAvailability.CanOfferNew(MailReaderFactory.IsImplemented);
+        }
+
+        /// <summary>
+        /// Rebuilds the rows. The active mark comes from the runtime rather than from the
+        /// settings id, because the runtime is what resolves a source this build cannot
+        /// read back to the local mailbox; trusting the settings id would label a mailbox
+        /// the app is not actually reading.
+        /// </summary>
+        private void FillSourceList()
+        {
+            if (_sourceList == null)
+            {
+                return;
+            }
+
+            _sourceList.Children.Clear();
+            var active = _mailSources.ActiveProfile;
+            var shown = MailSourceAvailability.DisplayList(_settings != null ? _settings.MailSources : null);
+            for (var i = 0; i < shown.Count; i++)
+            {
+                UiKit.AddSeparated(_sourceList, BuildSourceRow(shown[i], active), i == shown.Count - 1);
+            }
+        }
+
+        private FrameworkElement BuildSourceRow(MailSourceProfile source, MailSourceProfile active)
+        {
+            var readable = MailReaderFactory.IsImplemented(source.Kind);
+
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock
+            {
+                Text = Strings.T(SourceKindLabelKey(source.Kind)),
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Theme.InkBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            text.Children.Add(new TextBlock
+            {
+                Text = SourceSubtitle(source),
+                FontSize = 12,
+                Foreground = Theme.MutedBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            if (!readable)
+            {
+                text.Children.Add(new TextBlock
+                {
+                    Text = Strings.T("source.unreadable"),
+                    FontSize = 12,
+                    Foreground = Theme.WarningBrush,
+                    TextTrimming = TextTrimming.CharacterEllipsis
+                });
+            }
+
+            var actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            if (readable)
+            {
+                if (active != null && active.Id == source.Id)
+                {
+                    actions.Children.Add(new TextBlock
+                    {
+                        Text = Strings.T("source.active"),
+                        FontSize = 12,
+                        Foreground = Theme.MutedBrush,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                }
+                else
+                {
+                    var use = UiKit.Secondary(Strings.T("source.use"), OnUseSourceClick);
+                    use.Tag = source.Id;
+                    use.Height = 32;
+                    use.MinWidth = 92;
+                    actions.Children.Add(use);
+                }
+            }
+
+            if (MailSourceAvailability.IsRemovable(source))
+            {
+                var remove = UiKit.Destructive(Strings.T("source.remove"), OnRemoveSourceClick);
+                remove.Tag = source.Id;
+                remove.Height = 32;
+                remove.MinWidth = 72;
+                remove.Margin = new Thickness(8, 0, 0, 0);
+                actions.Children.Add(remove);
+            }
+
+            return UiKit.ListRow(null, text, actions);
+        }
+
+        private static string SourceKindLabelKey(MailSourceKind kind)
+        {
+            return kind == MailSourceKind.Graph ? "source.kind.graph" : "source.kind.local";
+        }
+
+        private static string SourceSubtitle(MailSourceProfile source)
+        {
+            if (source == null)
+            {
+                return string.Empty;
+            }
+
+            if (source.Kind == MailSourceKind.LocalOutlook)
+            {
+                return Strings.T("source.session.local");
+            }
+
+            return string.IsNullOrEmpty(source.AccountUpn)
+                ? Strings.T("source.session.graph")
+                : source.AccountUpn;
+        }
+
+        private void OnUseSourceClick(object sender, RoutedEventArgs e)
+        {
+            SetActiveSource(TagOf(sender));
+        }
+
+        private void OnRemoveSourceClick(object sender, RoutedEventArgs e)
+        {
+            RemoveSource(TagOf(sender));
+        }
+
+        private void OnAddSourceClick(object sender, RoutedEventArgs e)
+        {
+            if (_settings == null)
+            {
+                return;
+            }
+
+            var kind = MailSourceAvailability.FirstOfferableKind(MailReaderFactory.IsImplemented, MailSourceAvailability.CloudKinds);
+            if (kind == null)
+            {
+                return;
+            }
+
+            EnsureSourceList();
+            var added = new MailSourceProfile { Kind = kind.Value };
+            _settings.MailSources.Add(added);
+            _settings.ActiveMailSourceId = added.Id;
+            ApplySourceChoice();
+        }
+
+        private void SetActiveSource(string sourceId)
+        {
+            if (_settings == null || string.IsNullOrEmpty(sourceId))
+            {
+                return;
+            }
+
+            _settings.ActiveMailSourceId = sourceId;
+            ApplySourceChoice();
+        }
+
+        private void RemoveSource(string sourceId)
+        {
+            if (_settings == null || string.IsNullOrEmpty(sourceId) || _settings.MailSources == null)
+            {
+                return;
+            }
+
+            var target = FindSource(_settings.MailSources, sourceId);
+            if (target == null || !MailSourceAvailability.IsRemovable(target))
+            {
+                return;
+            }
+
+            _settings.MailSources.Remove(target);
+            _settings.ActiveMailSourceId = MailSourceAvailability.ActiveIdAfterRemoval(_settings.ActiveMailSourceId, sourceId);
+            ApplySourceChoice();
+        }
+
+        /// <summary>
+        /// Makes a source change take effect and stick: reconfigure the runtime so the
+        /// next scan reads the new mailbox, save, redraw the rows, then scan. The scan is
+        /// part of the switch rather than a separate click because the list on screen
+        /// still belongs to the mailbox the user just left.
+        /// </summary>
+        private void ApplySourceChoice()
+        {
+            _mailSources.Configure(_settings);
+            _settingsStore.Save(_settings);
+            FillSourceList();
+            OnScanClick(null, null);
+        }
+
+        private void EnsureSourceList()
+        {
+            if (_settings != null && _settings.MailSources == null)
+            {
+                _settings.MailSources = new List<MailSourceProfile>();
+            }
+        }
+
+        private static MailSourceProfile FindSource(IList<MailSourceProfile> list, string id)
+        {
+            if (list == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null && list[i].Id == id)
+                {
+                    return list[i];
+                }
+            }
+
+            return null;
+        }
+
+        private static string TagOf(object sender)
+        {
+            var element = sender as FrameworkElement;
+            return element == null ? null : Convert.ToString(element.Tag);
+        }
+
+        /// <summary>
+        /// The first-run question: which mailbox should this app read? Asked at most once,
+        /// and only when the build can offer a real alternative to the local Outlook - a
+        /// build that can read one mailbox has nothing to ask, so on such a build the flag
+        /// stays false and the sheet will be put the first time a second source exists.
+        /// </summary>
+        private void AskForMailSourceOnFirstRun()
+        {
+            if (_settings == null
+                || !MailSourceAvailability.NeedsFirstRunChoice(MailReaderFactory.IsImplemented, _settings.SourceChoiceAsked))
+            {
+                return;
+            }
+
+            var body = new StackPanel { Margin = new Thickness(20, 16, 20, 18) };
+            body.Children.Add(new TextBlock
+            {
+                Text = Strings.T("source.firstrun.body"),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Theme.MutedBrush
+            });
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 18, 0, 0)
+            };
+
+            var sheet = UiKit.GlassSheet(Strings.T("source.firstrun.title"), body, 460, 250);
+            sheet.Owner = this;
+
+            var local = UiKit.Primary(Strings.T("source.kind.local"), (s, e) =>
+            {
+                _settings.ActiveMailSourceId = MailSourceProfile.LocalId;
+                sheet.Close();
+            });
+            buttons.Children.Add(local);
+
+            var kinds = MailSourceAvailability.OfferableKinds(MailReaderFactory.IsImplemented, MailSourceAvailability.CloudKinds);
+            for (var i = 0; i < kinds.Count; i++)
+            {
+                var kind = kinds[i];
+                var pick = UiKit.Secondary(Strings.T(SourceKindLabelKey(kind)), (s, e) =>
+                {
+                    EnsureSourceList();
+                    var added = new MailSourceProfile { Kind = kind };
+                    _settings.MailSources.Add(added);
+                    _settings.ActiveMailSourceId = added.Id;
+                    sheet.Close();
+                });
+                pick.Margin = new Thickness(8, 0, 0, 0);
+                buttons.Children.Add(pick);
+            }
+
+            var later = UiKit.Secondary(Strings.T("source.firstrun.later"), (s, e) => sheet.Close());
+            later.Margin = new Thickness(8, 0, 0, 0);
+            buttons.Children.Add(later);
+            body.Children.Add(buttons);
+
+            sheet.ShowDialog();
+
+            // Recorded even when the user picks Not now: the question is worth asking once,
+            // not on every launch.
+            _settings.SourceChoiceAsked = true;
+            _settingsStore.Save(_settings);
+            _mailSources.Configure(_settings);
+            FillSourceList();
+        }
         /// <summary>The readable measure the settings column stops at.</summary>
         private const double SettingsColumnWidth = 640;
 
@@ -951,7 +1285,10 @@ namespace OutlookAiHelper.UI
             };
             column.Children.Add(UiKit.Subtitle(Strings.T("nav.settings")));
 
-            // Block 1 — how far back a scan looks.
+            // Block 1 (mail source) - the mailbox every other block acts on.
+            column.Children.Add(BuildSourceSettingsGroup());
+
+            // Block 2 — how far back a scan looks.
             _settingsDays = UiKit.Input((_settings != null ? _settings.ScanDays : 30).ToString());
             WithName(_settingsDays, Strings.T("settings.days"));
             _settingsDays.Width = 90;
@@ -960,7 +1297,7 @@ namespace OutlookAiHelper.UI
                 SettingsRow(Strings.T("settings.days"), _settingsDays),
                 SettingsNote(Strings.T("settings.scanScope"))));
 
-            // Block 2 — the language plus the one sort setting the mail list and the todo
+            // Block 3 — the language plus the one sort setting the mail list and the todo
             // panel's related-mails block share.
             _settingsLanguage = UiKit.Select();
             WithName(_settingsLanguage, Strings.T("settings.language"));
@@ -997,7 +1334,7 @@ namespace OutlookAiHelper.UI
                 SettingsRow(Strings.T("settings.language"), _settingsLanguage),
                 SettingsRow(Strings.T("mail.sort"), _mailSortBox, Strings.T("mail.sort.help"))));
 
-            // Block 3 — the cheap new-mail poll that drives the full rescan.
+            // Block 4 — the cheap new-mail poll that drives the full rescan.
             _autoRefreshBox = UiKit.Select();
             WithName(_autoRefreshBox, Strings.T("settings.autoRefresh"));
             _autoRefreshBox.Width = 180;
@@ -1015,7 +1352,7 @@ namespace OutlookAiHelper.UI
                 Strings.T("settings.section.refresh"),
                 SettingsRow(Strings.T("settings.autoRefresh"), _autoRefreshBox)));
 
-            // Block 4 — the words that decide a quadrant.
+            // Block 5 — the words that decide a quadrant.
             _settingsUrgent = UiKit.Input(JoinKeywords(_settings != null ? _settings.UrgentKeywords : RuleOptions.DefaultUrgentKeywords()));
             WithName(_settingsUrgent, Strings.T("settings.urgentKeywords"));
             _settingsImportant = UiKit.Input(JoinKeywords(_settings != null ? _settings.ImportantKeywords : RuleOptions.DefaultImportantKeywords()));
@@ -1028,7 +1365,7 @@ namespace OutlookAiHelper.UI
                 SettingsStackedRow(Strings.T("settings.importantKeywords"), _settingsImportant),
                 SettingsStackedRow(Strings.T("settings.vip"), _settingsVip)));
 
-            // Blocks 5-7 — AI enhancement, privacy, software update.
+            // Blocks 6-8 — AI enhancement, privacy, software update.
             column.Children.Add(BuildAiSettingsGroup());
             column.Children.Add(BuildPrivacySettingsGroup());
             var updateGroup = UiKit.InsetGroup(Strings.T("update.section"), BuildUpdateSection());
@@ -1131,7 +1468,7 @@ namespace OutlookAiHelper.UI
         }
 
         /// <summary>
-        /// Block 5 — AI enhancement. Only the provider rows are always on screen: the URL / key /
+        /// Block 6 — AI enhancement. Only the provider rows are always on screen: the URL / key /
         /// model inputs live in an editor that opens in place, under the list, on 新增 or 編輯.
         /// </summary>
         private FrameworkElement BuildAiSettingsGroup()
@@ -1234,7 +1571,7 @@ namespace OutlookAiHelper.UI
             return editor;
         }
 
-        /// <summary>Block 6 — where the local data lives, and the two ways out.</summary>
+        /// <summary>Block 7 — where the local data lives, and the two ways out.</summary>
         private FrameworkElement BuildPrivacySettingsGroup()
         {
             var path = new TextBlock

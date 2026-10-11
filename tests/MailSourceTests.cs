@@ -5,6 +5,7 @@ using OutlookAiHelper.Adapters.Mail;
 using OutlookAiHelper.Adapters.Storage;
 using OutlookAiHelper.Core.Abstractions;
 using OutlookAiHelper.Core.Models;
+using OutlookAiHelper.Application;
 
 namespace OutlookAiHelper.Tests
 {
@@ -181,6 +182,75 @@ namespace OutlookAiHelper.Tests
                 {
                     IMailReader reader = new FakeReader();
                     return reader.ProbeInbox().IsUsable && !reader.TryOpenInOutlook("entry");
+                });
+                failed += Check("the source list always offers a way back to the local mailbox", () =>
+                {
+                    var configured = new List<MailSourceProfile>
+                    {
+                        new MailSourceProfile { Kind = MailSourceKind.Graph, Name = "cloud" }
+                    };
+                    var shown = MailSourceAvailability.DisplayList(configured);
+                    return shown.Count == 2
+                        && shown[0].Kind == MailSourceKind.LocalOutlook
+                        && shown[0].Id == MailSourceProfile.LocalId
+                        && shown[1].Kind == MailSourceKind.Graph;
+                });
+
+                failed += Check("a stored local source is listed once, not twice", () =>
+                {
+                    var configured = new List<MailSourceProfile>
+                    {
+                        MailSourceProfile.Local(),
+                        new MailSourceProfile { Kind = MailSourceKind.Graph, Name = "cloud" }
+                    };
+                    var shown = MailSourceAvailability.DisplayList(configured);
+                    return shown.Count == 2 && shown[0].Id == MailSourceProfile.LocalId;
+                });
+
+                failed += Check("the local source can never be removed", () =>
+                {
+                    var cloud = new MailSourceProfile { Kind = MailSourceKind.Graph };
+                    return !MailSourceAvailability.IsRemovable(MailSourceProfile.Local())
+                        && !MailSourceAvailability.IsRemovable(null)
+                        && MailSourceAvailability.IsRemovable(cloud);
+                });
+
+                failed += Check("a local-only build offers nothing to add and asks nothing", () =>
+                {
+                    Func<MailSourceKind, bool> only = kind => kind == MailSourceKind.LocalOutlook;
+                    return !MailSourceAvailability.CanOfferNew(only)
+                        && !MailSourceAvailability.NeedsFirstRunChoice(only, false)
+                        && MailSourceAvailability.FirstOfferableKind(only, MailSourceAvailability.CloudKinds) == null;
+                });
+
+                failed += Check("with a cloud reader the first run asks once, then never again", () =>
+                {
+                    Func<MailSourceKind, bool> any = kind => true;
+                    return MailSourceAvailability.CanOfferNew(any)
+                        && MailSourceAvailability.NeedsFirstRunChoice(any, false)
+                        && !MailSourceAvailability.NeedsFirstRunChoice(any, true)
+                        && MailSourceAvailability.FirstOfferableKind(any, MailSourceAvailability.CloudKinds) == MailSourceKind.Graph;
+                });
+
+                failed += Check("the local kind is never something to add", () =>
+                {
+                    var kinds = MailSourceAvailability.CloudKinds;
+                    for (var i = 0; i < kinds.Length; i++)
+                    {
+                        if (kinds[i] == MailSourceKind.LocalOutlook)
+                        {
+                            return false;
+                        }
+                    }
+
+                    return kinds.Length > 0;
+                });
+
+                failed += Check("removing the active source falls back to the local mailbox", () =>
+                {
+                    return MailSourceAvailability.ActiveIdAfterRemoval("cloud", "cloud") == MailSourceProfile.LocalId
+                        && MailSourceAvailability.ActiveIdAfterRemoval("cloud", "other") == "cloud"
+                        && MailSourceAvailability.ActiveIdAfterRemoval(null, null) == MailSourceProfile.LocalId;
                 });
             }
             finally
