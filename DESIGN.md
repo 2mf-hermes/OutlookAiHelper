@@ -47,6 +47,7 @@ MainWindow
 │   └── TodoDetail / Inline edit
 │       └── RelatedMails（同主旨串的所有信）
 └── Settings
+    ├── 來源（本機 Outlook／雲端 Microsoft 365）
     ├── 掃描範圍（資料夾、天數、帳號）
     ├── 分類規則（VIP、關鍵字、權重說明）
     ├── AI（預設關、Provider、白名單欄位）
@@ -291,13 +292,15 @@ Apple macOS / iOS 系統設定與郵件工具列的玻璃材質語彙，搬到 W
 
 | 介面 | 目的 | MVP 實作 |
 |---|---|---|
-| `IMailReader` | 讀郵件 | `OutlookComMailReader` |
+| `IMailReader` | 讀郵件 | `OutlookComMailReader`（本機）、`GraphMailReader`（雲端，v1.2.0） |
 | `IMailArchiveImporter` | PST 匯入 | `PstImportReader`（可 M2） |
 | `IOverrideStore` / `ITodoStore` / `ISettingsStore` | 持久化 | `JsonStore` |
 | `IClassifier` | 分類 | `RuleEngine` |
 | `IAiCapability` | 增強 | `NullAiCapability` + 可選 HTTP adapter |
 
 換 AI 廠商只動 `Provider Adapter`。換儲存只動 Storage adapter。Core 不變。
+
+換郵件來源同理：`MailReaderFactory` 依來源種類挑實作，`MailSourceRuntime` 決定當下作用中的來源，`ScanMailUseCase` 只認 `IMailReader`。v1.2.0 起 `ProbeInbox`／`TryOpenInOutlook` 也納入此介面，介面外不再有 COM 專屬呼叫。
 
 ---
 
@@ -394,6 +397,11 @@ AppSettings
   SchemaVersion, Language, FolderScope[], ScanDays,
   VipAddresses[], UrgentKeywords[], ImportantKeywords[],
   AiEnabled, AiProviderConfig? (無金鑰明文；Key 另存 user DPAPI/檔且權限最緊)
+  MailSources[], ActiveMailSourceId, SourceChoiceAsked
+
+MailSourceProfile
+  Id, Kind (文字：local | graph), DisplayName, AccountUpn?
+  （不含任何憑證；refresh token 另存 DPAPI 檔，永不進 settings.json）
 ```
 
 ### 7.2 象限定義（可解釋起點）
@@ -423,6 +431,7 @@ AppSettings
 | `overrides.json` | Override[] | 直到刪除或「清除本地分類記憶」 |
 | `todos.json` | TodoItem[] | 直到刪除或匯出後清除 |
 | `cache\scan-index.json` | 上次掃描摘要（無內文） | 可清除；可設 TTL 30 天 |
+| `secrets\refresh-<sourceId>.dat` | 雲端來源的 refresh token（DPAPI CurrentUser；永不進 settings.json 或 Log） | 直到登出或移除來源 |
 | `logs\app-YYYYMMDD.log` | 技術 Log | 滾動保留 7 天 |
 | `exports\` | 使用者匯出 | 使用者自管 |
 
@@ -462,6 +471,7 @@ outlook-ai-helper/
           MailSummary.cs
           TodoItem.cs
           Override.cs
+          MailSourceProfile.cs
         Abstractions/
           IMailReader.cs
           IClassifier.cs
@@ -478,6 +488,10 @@ outlook-ai-helper/
         Outlook/
           OutlookComMailReader.cs
           OutlookAvailability.cs
+        Mail/
+          MailReaderFactory.cs
+          MailSourceRuntime.cs
+          GraphMailReader.cs（v1.2.0 雲端）
         Storage/
           JsonStore.cs
           JsonPaths.cs
@@ -584,6 +598,7 @@ M1 不把「真實 Outlook 自動化測試」當閘門，先用 Fake 鎖規則�
 | **M2** | 待回待辦 + Override 持久化 | todos.json、覆寫持久化、從郵件加待辦 | 自動待辦生成 |
 | **M3** | 設定、隱私、匯出/清除 | 設定頁、隱私面板、匯出 JSON | 云同步 |
 | **M4** | 可選 AI 增強 | Provider Adapter、白名單預覽、可切換 | 建議回覆（FUTURE） |
+| **M5**（v1.2.0） | 多來源：本機＋雲端 Microsoft 365 | 來源模型與接縫、設定頁「來源」區塊、首次啟動選來源、裝置碼登入、`Mail.ReadBasic` 唯讀 | 共用信箱、待辦跨機同步、寫入郵件 |
 
 依序交付；每個里程碑都要能走完「進入 → 核心任務 → 結果 → 錯誤」。
 
@@ -612,19 +627,22 @@ M1 不把「真實 Outlook 自動化測試」當閘門，先用 Fake 鎖規則�
 
 命中即加對應分；可多詞累加有上限。VIP 寄件者仍計入重要分。
 
-### 12.2 設定頁區塊（v1.1.8）
+### 12.2 設定頁區塊（v1.1.8，v1.2.0 新增「來源」）
 
-設定頁不再是單欄堆疊的說明文字，改成七個卡片區塊，由上而下：掃描範圍、顯示、自動刷新、關鍵字規則、AI 增強、隱私、軟體更新。每塊＝`UiKit.InsetGroup`（區塊標題＋圓角卡片），卡片內每一列是一個設定；欄寬上限 640px（`SettingsColumnWidth`），避免在寬視窗被拉成一行長文。
+設定頁不再是單欄堆疊的說明文字，改成八個卡片區塊，由上面下：來源、掃描範圍、顯示、自動刷新、關鍵字規則、AI 增強、隱私、軟體更新。每塊＝`UiKit.InsetGroup`（區塊標題＋圓角卡片），卡片內每一列是一個設定；欄寬上限 640px（`SettingsColumnWidth`），避免在寬視窗被拉成一行長文。
+
+「來源」排在第一位，因為它決定其餘設定作用在哪一顆信箱上；掃描範圍、關鍵字規則、待辦都隸屬於作用中的來源。
 
 | 區塊 | 標題 key | 內容 |
 |---|---|---|
-| 1 掃描範圍 | `settings.section.scan` | 掃描天數＋掃描範圍說明 |
-| 2 顯示 | `settings.section.display` | 介面語言、郵件排序（清單與待辦面板的相關郵件共用同一設定） |
-| 3 自動刷新 | `settings.section.refresh` | 新郵件輪詢間隔 |
-| 4 關鍵字規則 | `settings.section.rules` | 緊急／重要關鍵字、VIP 寄件者 |
-| 5 AI 增強 | `ai.title` | AI 開關、供應者列、供應者編輯器、金鑰落地說明 |
-| 6 隱私 | `privacy.title` | 資料位置、匯出／開啟資料夾／清除本機資料 |
-| 7 軟體更新 | `update.section` | 啟動時自動檢查更新與更新資訊 |
+| 1 來源 | `settings.section.source` | 來源清單（本機／雲端）、切換作用中來源、新增／登入／移除 |
+| 2 掃描範圍 | `settings.section.scan` | 掃描天數＋掃描範圍說明 |
+| 3 顯示 | `settings.section.display` | 介面語言、郵件排序（清單與待辦面板的相關郵件共用同一設定） |
+| 4 自動刷新 | `settings.section.refresh` | 新郵件輪詢間隔 |
+| 5 關鍵字規則 | `settings.section.rules` | 緊急／重要關鍵字、VIP 寄件者 |
+| 6 AI 增強 | `ai.title` | AI 開關、供應者列、供應者編輯器、金鑰落地說明 |
+| 7 隱私 | `privacy.title` | 資料位置、匯出／開啟資料夾／清除本機資料 |
+| 8 軟體更新 | `update.section` | 啟動時自動檢查更新與更新資訊 |
 
 AI 供應者的編輯方式（設定頁第 5 區塊）：
 
@@ -635,3 +653,47 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 | 金鑰欄 | 預設遮蔽（`UiKit.PasswordInput` → `PasswordBox`＋`GlassSecretTemplate`）；勾選顯示切換為明文欄位。收合編輯器時一律回到遮蔽，且只把使用者看得見的那一欄當作真值 | [DECISION] |
 | 收合的意義 | 編輯器收合時不做回寫：已存的供應者設定才是真值，欄位只是它的鏡像 | [DECISION] |
 | 金鑰落地 | 金鑰只寫入本機設定檔，不寫入 Log（與隱私區塊的說明一致） | [DECISION] |
+
+### 12.3 多來源：本機＋雲端 Microsoft 365（v1.2.0）
+
+需求：除了本機 Outlook，也能讀企業 Microsoft 365 或雲端 Microsoft 帳號；首次使用可設定來源；之後可在設定增減與管理；多台電腦可同時讀同一顆信箱。
+
+#### 決策
+
+| 決策 | 內容 | 標籤 |
+|---|---|---|
+| 來源模型 | 「來源清單＋同時只有一個作用中來源」。未設定任何來源時自動合成一個本機來源，本機行為與 v1.1.x 完全相同 | [DECISION] |
+| 登入 | 自帶裝置碼流程（device code）。**不引 MSAL、不新增任何相依**，沿用既有的 `HttpWebRequest` | [DECISION] |
+| Client ID | 內建一組預設註冊（多租戶＋個人帳號），裝好即可用；進階使用者可在設定覆寫成自己的註冊 | [DECISION] |
+| 權限 | 唯讀 `Mail.ReadBasic`（官方排除 `body`／`bodyPreview`／`uniqueBody`／`attachments`／擴充屬性）。「管理」不含寫信、移動、刪除 | [DECISION] |
+| 帳號類型 | 多租戶＋個人 Microsoft 帳戶，授權端點用 `common` | [DECISION] |
+| 多端 | 多台電腦可讀同一顆雲端信箱；**設定與待辦仍為單機**，不做跨機同步 | [DECISION] |
+| 共用信箱 | 本版不做 | [DECISION] |
+| 憑證落地 | refresh token 以 DPAPI（`CurrentUser`）存 `secrets\refresh-<sourceId>.dat`；不進 `settings.json`、不進 Log | [DECISION] |
+| Client ID 的機密性 | client ID／tenant id 是公開資訊、不是機密（公開用戶端沒有 client secret），可寫在程式與文件；只有 refresh token 需要保護 | [DECISION] |
+
+#### 唯讀權限為何足夠
+
+`MailSummary` 只有 10 個中繼資料欄位（`EntryId`、`FolderPath`、`Subject`、`FromName`、`FromAddress`、`ReceivedOn`、`IsRead`、`HasFlag`、`IsMeetingRequest`、`Importance`），全 repo 沒有任何 `Save`／`Move`／`Delete` 呼叫，App 從不讀取內文。因此 `Mail.ReadBasic` 的欄位排除清單不影響任何既有功能；申請較高權限只是擴大授權面。
+
+#### 風險（屬於租用戶政策，實作層無法消除）
+
+| 風險 | 說明 | 對策 |
+|---|---|---|
+| 租用戶封鎖裝置碼流程 | 條件式存取若擋下裝置碼流程，該路徑即失效 | 無程式面解法；退回本機模式（該機 Outlook 已登入即可讀同一顆信箱） |
+| 使用者同意被停用 | `Mail.ReadBasic` 本身 `AdminConsentRequired = No`，但企業常關閉使用者自行同意，仍需 IT 按一次 | 訊息要說清楚這是租用戶政策，不是程式問題 |
+| 來源切換與待辦的關聯 | 待辦與手動分類覆寫都以 `EntryId` 為鍵。換來源後舊待辦仍在，但其郵件不在作用中來源，待辦詳情的「相關郵件」會變空；覆寫因鍵不同不會誤套 | 切換來源時提示；`JsonTodoStore` 的遷移邏輯越晚處理越貴 |
+
+#### 接縫（v1.2.0 已完成的部分）
+
+- `IMailReader` 收納 `ProbeInbox`／`TryOpenInOutlook`，介面外不再有 COM 專屬呼叫；`OutlookComMailReader` 全 repo 只剩一處建構。
+- `MailSourceProfile`：`Kind` 以**文字**儲存，舊版讀到不認識的種類不會誤判成本機。
+- `MailReaderFactory`：未實作的種類回 `null` 而非丟例外。
+- `MailSourceRuntime`：四條退化路徑一律退回本機（清單為空／找不到 id／種類未實作／設定為 null），因為「沒有可讀信箱」與「Outlook 壞了」在畫面上長得一樣。
+- 設定檔新增 `MailSources`／`ActiveMailSourceId`／`SourceChoiceAsked`；舊設定檔可直接讀（新增欄位向後相容）。
+
+#### 待驗（要有真實帳號才能量測，在此之前不得當成結果陳述）
+
+- `Mail.ReadBasic` 在真實租用戶實際回傳的欄位集合。
+- `IsMeetingRequest` 對應到 Graph 的哪個欄位。
+- 該租用戶是否封鎖裝置碼流程。
