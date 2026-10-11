@@ -18,6 +18,7 @@ namespace OutlookAiHelper.TestHost
             failed += UpdateTests.Run();
             failed += MailSourceTests.Run();
             failed += GraphMailTests.Run();
+            failed += GraphJsonTests.Run();
             if (failed == 0)
             {
                 Console.WriteLine("ALL TESTS PASSED");

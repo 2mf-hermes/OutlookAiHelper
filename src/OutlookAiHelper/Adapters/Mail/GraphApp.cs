@@ -73,6 +73,22 @@ namespace OutlookAiHelper.Adapters.Mail
         }
 
         /// <summary>
+        /// The folder list is asked for exactly the way the desktop reader builds one: its first
+        /// page of top-level folders, not the whole tree.
+        /// </summary>
+        public static readonly string[] FolderSelectFields = { "id", "displayName", "wellKnownName" };
+
+        public static string FolderSelectText
+        {
+            get { return string.Join(",", FolderSelectFields); }
+        }
+
+        public static string FolderListUrl
+        {
+            get { return MailFoldersUrl + "?$top=20&$select=" + FolderSelectText; }
+        }
+
+        /// <summary>
         /// True when the value can actually be used as a client id. A build whose value is empty
         /// or a leftover placeholder must not claim it can sign in, so the shape is checked
         /// rather than the string merely being non-empty.
