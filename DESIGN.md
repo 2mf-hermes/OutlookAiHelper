@@ -691,6 +691,7 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - `MailReaderFactory`：未實作的種類回 `null` 而非丟例外；v1.2.0 起依來源與註冊建出雲端讀取器，沒有可用的註冊（或來源 id 不可能是一個檔名）一樣回 `null`，呼叫端一律退回本機。
 - `MailSourceRuntime`：五條退化路徑一律退回本機（清單為空／找不到 id／種類未實作／設定為 null／雲端來源沒有可用註冊），因為「沒有可讀信箱」與「Outlook 壞了」在畫面上長得一樣；並記住已建好的讀取器，只在切換來源時重建（否則每次掃描都會重新登入，也會忘記登入曾被拒絕）。
 - 設定檔新增 `MailSources`／`ActiveMailSourceId`／`SourceChoiceAsked`；舊設定檔可直接讀（新增欄位向後相容）。
+- `Application/GraphSignIn`：裝置碼登入的編排——要裝置碼、輪詢權杖、把重新整理權杖交給加密儲存——已收斂成一個物件，尚未接上畫面。失敗一律是一個畫面能顯示的字，不是例外（在 UI 執行緒上為了一個可預期的狀況丟例外會讓它變成崩潰）；輪詢時的 HTTP 400 `authorization_pending` 是「繼續等」而不是失敗，`slow_down` 是等更久，只有 `expired_token`／`access_denied` 才是結束。預設 client ID 仍為空字串，所以 `IsImplemented(Graph)` 仍回 `false`，雲端來源還不會出現在畫面上。
 
 #### 待驗（要有真實帳號才能量測，在此之前不得當成結果陳述）
 
