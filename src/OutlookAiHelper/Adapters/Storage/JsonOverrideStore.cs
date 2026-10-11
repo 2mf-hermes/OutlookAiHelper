@@ -27,6 +27,53 @@ namespace OutlookAiHelper.Adapters.Storage
             get { return Path.Combine(RootDirectory, "settings.json"); }
         }
 
+        /// <summary>
+        /// Where the refresh tokens of cloud sources live: their own folder, beside the settings file
+        /// rather than inside it. A token written into settings.json would travel with every copy of
+        /// that file, and that file is meant to be copyable.
+        /// </summary>
+        public static string SecretsDirectory
+        {
+            get { return Path.Combine(RootDirectory, "secrets"); }
+        }
+
+        /// <summary>
+        /// The file one cloud source's refresh token lives in. The id comes out of the settings file,
+        /// which is plain json a user can hand-edit, so it is treated as untrusted: it has to look like
+        /// an id and nothing else. That is an allowlist rather than a list of forbidden characters,
+        /// because a name that needs escaping is not a name this app ever writes, and an allowlist
+        /// cannot be outgrown by a new way of spelling a path or by a character a filesystem decides
+        /// to treat specially.
+        /// </summary>
+        public static string RefreshTokenPath(string sourceId)
+        {
+            if (!IsSafeSourceId(sourceId))
+            {
+                throw new ArgumentException("a source id has to be a plain identifier", "sourceId");
+            }
+
+            return Path.Combine(SecretsDirectory, "refresh-" + sourceId + ".dat");
+        }
+
+        private static bool IsSafeSourceId(string sourceId)
+        {
+            if (string.IsNullOrEmpty(sourceId) || sourceId.Length > 64)
+            {
+                return false;
+            }
+
+            foreach (var c in sourceId)
+            {
+                var plain = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_';
+                if (!plain)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         public static void EnsureRoot()
         {
             Directory.CreateDirectory(RootDirectory);

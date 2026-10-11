@@ -62,7 +62,7 @@ namespace OutlookAiHelper.Adapters.Mail
         /// </summary>
         internal static IList<MailSummary> ParseMessages(string json, string folderDisplayName)
         {
-            var page = Deserialize<MessagePageDocument>(json);
+            var page = JsonBody.Read<MessagePageDocument>(json);
             if (page == null)
             {
                 return null;
@@ -112,7 +112,7 @@ namespace OutlookAiHelper.Adapters.Mail
         /// </summary>
         internal static IList<GraphFolderInfo> ParseFolders(string json)
         {
-            var page = Deserialize<FolderPageDocument>(json);
+            var page = JsonBody.Read<FolderPageDocument>(json);
             if (page == null)
             {
                 return null;
@@ -215,7 +215,7 @@ namespace OutlookAiHelper.Adapters.Mail
         /// </summary>
         internal static string ParseErrorCode(string json)
         {
-            var envelope = Deserialize<ErrorDocument>(json);
+            var envelope = JsonBody.Read<ErrorDocument>(json);
             if (envelope == null || envelope.Error == null)
             {
                 return null;
@@ -310,37 +310,6 @@ namespace OutlookAiHelper.Adapters.Mail
             }
 
             return 1;
-        }
-
-        private static T Deserialize<T>(string json) where T : class
-        {
-            if (string.IsNullOrEmpty(json))
-            {
-                return null;
-            }
-
-            var trimmed = json.TrimStart();
-            if (trimmed.Length == 0 || trimmed[0] != '{')
-            {
-                // Every body this app reads is a json object. Anything else -- an html sign-in
-                // page handed back by a proxy, a bare array, a quoted string -- is a failed read,
-                // and saying so is better than reporting an empty mailbox.
-                return null;
-            }
-
-            try
-            {
-                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
-                {
-                    return (T)new DataContractJsonSerializer(typeof(T)).ReadObject(stream);
-                }
-            }
-            catch (Exception)
-            {
-                // A malformed or truncated payload is a failed read, not a crash: this runs on the
-                // UI thread of a mail client.
-                return null;
-            }
         }
 
         [DataContract]

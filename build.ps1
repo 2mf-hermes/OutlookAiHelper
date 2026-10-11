@@ -43,7 +43,8 @@ $wpf = @(
 $sys = @(
   (Join-Path $fw 'System.dll'),
   (Join-Path $fw 'System.Core.dll'),
-  (Join-Path $fw 'System.Runtime.Serialization.dll')
+  (Join-Path $fw 'System.Runtime.Serialization.dll'),
+  (Join-Path $fw 'System.Security.dll')
 )
 foreach ($p in ($wpf + $sys + @($csc))) {
   if (-not (Test-Path $p)) { throw "Missing build reference: $p" }
