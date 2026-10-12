@@ -1,4 +1,5 @@
 using OutlookAiHelper.Adapters.Storage;
+using OutlookAiHelper.Application;
 using OutlookAiHelper.Core.Abstractions;
 using OutlookAiHelper.Core.Models;
 
@@ -113,6 +114,46 @@ namespace OutlookAiHelper.Adapters.Mail
                 graphClientId.Trim(),
                 new RefreshTokenStore(JsonPaths.RefreshTokenPath(source.Id)),
                 GraphTransport.Instance);
+        }
+
+        /// <summary>
+        /// The sign-in for one configured source, or null when this source has none to offer: the
+        /// local kind signs in through Outlook rather than through this app, a registration the app
+        /// cannot use has nothing to sign in against, and an id that could not name a file has
+        /// nowhere to keep a token.
+        ///
+        /// Built here, beside the reader and out of the same three pieces -- the client id, the
+        /// token path, the transport -- so that a sign-in can only ever store its token where the
+        /// reader will look for it. A sign-in that kept its token somewhere else would leave a
+        /// source reporting itself signed out for ever.
+        /// </summary>
+        internal static GraphSignIn CreateSignIn(MailSourceProfile source, string graphClientId)
+        {
+            if (source == null || !IsImplemented(source.Kind, graphClientId))
+            {
+                return null;
+            }
+
+            if (!JsonPaths.IsSafeSourceId(source.Id))
+            {
+                // The same refusal, for the same reason as the reader's: the token path is derived
+                // from the id, and the id comes out of a file a user can hand-edit.
+                return null;
+            }
+
+            return new GraphSignIn(
+                graphClientId.Trim(),
+                new RefreshTokenStore(JsonPaths.RefreshTokenPath(source.Id)),
+                GraphTransport.Instance);
+        }
+
+        /// <summary>
+        /// The same sign-in, for callers that resolved no registration of their own: asked with the
+        /// one this build shipped with.
+        /// </summary>
+        internal static GraphSignIn CreateSignIn(MailSourceProfile source)
+        {
+            return CreateSignIn(source, GraphApp.DefaultClientId);
         }
 
         /// <summary>

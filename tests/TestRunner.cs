@@ -23,6 +23,7 @@ namespace OutlookAiHelper.TestHost
             failed += RefreshTokenStoreTests.Run();
             failed += GraphReaderTests.Run();
             failed += GraphSignInTests.Run();
+            failed += SignInReasonTests.Run();
             if (failed == 0)
             {
                 Console.WriteLine("ALL TESTS PASSED");

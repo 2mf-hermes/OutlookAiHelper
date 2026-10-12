@@ -1059,6 +1059,13 @@ namespace OutlookAiHelper.UI
                 }
             }
 
+            // Signing a cloud source in hangs off the row it belongs to: it is what makes that row
+            // readable, and the row is where the code has to be shown while the browser step waits.
+            if (readable && source.Kind == MailSourceKind.Graph)
+            {
+                AddSignInControls(text, actions, source);
+            }
+
             if (MailSourceAvailability.IsRemovable(source))
             {
                 var remove = UiKit.Destructive(Strings.T("source.remove"), OnRemoveSourceClick);
