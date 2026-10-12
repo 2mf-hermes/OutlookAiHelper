@@ -691,8 +691,9 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - `MailReaderFactory`：未實作的種類回 `null` 而非丟例外；v1.2.0 起依來源與註冊建出雲端讀取器，沒有可用的註冊（或來源 id 不可能是一個檔名）一樣回 `null`，呼叫端一律退回本機。
 - `MailSourceRuntime`：五條退化路徑一律退回本機（清單為空／找不到 id／種類未實作／設定為 null／雲端來源沒有可用註冊），因為「沒有可讀信箱」與「Outlook 壞了」在畫面上長得一樣；並記住已建好的讀取器，只在切換來源時重建（否則每次掃描都會重新登入，也會忘記登入曾被拒絕）。
 - 設定檔新增 `MailSources`／`ActiveMailSourceId`／`SourceChoiceAsked`；舊設定檔可直接讀（新增欄位向後相容）。
-- `Application/GraphSignIn`：裝置碼登入的編排——要裝置碼、輪詢權杖、把重新整理權杖交給加密儲存——已收斂成一個物件，畫面已接上（見下一條）。失敗一律是一個畫面能顯示的字，不是例外（在 UI 執行緒上為了一個可預期的狀況丟例外會讓它變成崩潰）；輪詢時的 HTTP 400 `authorization_pending` 是「繼續等」而不是失敗，`slow_down` 是等更久，只有 `expired_token`／`access_denied` 才是結束。預設 client ID 仍為空字串，所以 `IsImplemented(Graph)` 仍回 `false`，雲端來源還不會出現在畫面上。
+- `Application/GraphSignIn`：裝置碼登入的編排——要裝置碼、輪詢權杖、把重新整理權杖交給加密儲存——已收斂成一個物件，畫面已接上（見下一條）。失敗一律是一個畫面能顯示的字，不是例外（在 UI 執行緒上為了一個可預期的狀況丟例外會讓它變成崩潰）；輪詢時的 HTTP 400 `authorization_pending` 是「繼續等」而不是失敗，`slow_down` 是等更久，只有 `expired_token`／`access_denied` 才是結束。預設 client ID 仍為空字串，所以 `IsImplemented(Graph)` 仍回 `false`，雲端來源還不會出現在畫面上（模組已暫時關閉，見下一條）。
 - `Application/SignInReason` 與 `UI/MainWindow.SignIn`：編排器已接上畫面——字詞轉句子自成一塊（只認字詞、只吐句子，所以能在離線測試裡窮舉），畫面那塊只管裝置碼提示、輪詢節奏與登出，輪詢沿用既有的 `DispatcherTimer` 寫法；沒有內建 client ID 時那條來源根本沒有登入可給（`SignInFor` 回 `null`），這整塊不會出現在畫面上。
+- 這一版把雲端模組暫時關閉：`MailReaderFactory.GraphReaderAvailable` 為 `false`，所以雲端來源這一版不提供、也不會出現在畫面上（本機來源照常，Outlook 桌面已登入的個人帳號本來就涵蓋在本機模式裡）。開關和它上面的說明放在同一行，要重新開放只改這一行；`tests/CloudModuleHiddenTests.cs` 把「只有註冊、模組關著時仍讀不到」與「這個版本還認得雲端這個種類」兩件事釘住，免得哪天被當成死碼刪掉。
 
 #### 待驗（要有真實帳號才能量測，在此之前不得當成結果陳述）
 

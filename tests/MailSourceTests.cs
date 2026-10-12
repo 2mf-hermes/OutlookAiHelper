@@ -271,8 +271,12 @@ namespace OutlookAiHelper.Tests
                     return kinds.Length > 0;
                 });
 
-                failed += Check("a cloud source resolves to the cloud reader, and to the same one twice", () =>
+                failed += Check("a cloud source stays unreadable while the cloud module is hidden", () =>
                 {
+                    // The id below is well formed, and that is the point: while the cloud module is
+                    // hidden the switch is the outer answer, so a registration this build could use
+                    // still answers with the local mailbox rather than with a reader this build
+                    // ships no registration for.
                     var cloud = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph, Name = "cloud" };
                     var s = AppSettings.CreateDefault();
                     s.MailSources.Add(MailSourceProfile.Local());
@@ -283,16 +287,17 @@ namespace OutlookAiHelper.Tests
                     var runtime = new MailSourceRuntime(local, CloudId);
                     runtime.Configure(s);
 
-                    var reader = runtime.Reader as GraphMailReader;
-                    return runtime.ActiveProfile.Id == cloud.Id
-                        && !runtime.RequiresSta
-                        && reader != null
-                        && reader.ClientId == CloudId
-                        && ReferenceEquals(runtime.Reader, reader)
-                        && !ReferenceEquals(runtime.Reader, local);
+                    // Reading twice is what makes this about the cache as well as the answer: the
+                    // second read has to hand back the same reader, not build one per call.
+                    var first = runtime.Reader;
+                    return runtime.ActiveProfile.Id == MailSourceProfile.LocalId
+                        && runtime.RequiresSta
+                        && ReferenceEquals(first, local)
+                        && ReferenceEquals(runtime.Reader, first)
+                        && MailReaderFactory.Create(cloud, null, CloudId) == null;
                 });
 
-                failed += Check("switching back to the local source hands the local reader back", () =>
+                failed += Check("switching away from a hidden cloud source hands the local reader back", () =>
                 {
                     var cloud = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph, Name = "cloud" };
                     var local = new FakeReader();
@@ -303,14 +308,17 @@ namespace OutlookAiHelper.Tests
                     onCloud.MailSources.Add(cloud);
                     onCloud.ActiveMailSourceId = cloud.Id;
                     runtime.Configure(onCloud);
-                    var built = runtime.Reader as GraphMailReader;
+                    var hiddenCloud = runtime.Reader;
 
                     var onLocal = AppSettings.CreateDefault();
                     onLocal.MailSources.Add(MailSourceProfile.Local());
                     onLocal.ActiveMailSourceId = MailSourceProfile.LocalId;
                     runtime.Configure(onLocal);
 
-                    return built != null
+                    // Both settings files answer with the local mailbox, so this is a switch between
+                    // two different active sources that happen to resolve to the same reader: what
+                    // is asked here is that the reader belongs to the source that is active now.
+                    return ReferenceEquals(hiddenCloud, local)
                         && ReferenceEquals(runtime.Reader, local)
                         && runtime.ActiveProfile.Id == MailSourceProfile.LocalId;
                 });
@@ -340,13 +348,20 @@ namespace OutlookAiHelper.Tests
                     var tooLong = new MailSourceProfile { Id = new string('x', 65), Kind = MailSourceKind.Graph };
                     var plain = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph };
 
+                    // Nothing here is built while the cloud module is hidden, so the guard is asked
+                    // about the ids themselves as well as through Create: a name that could point
+                    // outside the secrets folder has to be refused as a name, whether or not a
+                    // reader would have been built for it.
                     return MailReaderFactory.Create(escaping, null, CloudId) == null
                         && MailReaderFactory.Create(slashed, null, CloudId) == null
                         && MailReaderFactory.Create(empty, null, CloudId) == null
                         && MailReaderFactory.Create(tooLong, null, CloudId) == null
-                        && MailReaderFactory.Create(plain, null, CloudId) != null
+                        && MailReaderFactory.Create(plain, null, CloudId) == null
                         && JsonPaths.IsSafeSourceId("cloud-1")
-                        && !JsonPaths.IsSafeSourceId(escaping.Id);
+                        && !JsonPaths.IsSafeSourceId(escaping.Id)
+                        && !JsonPaths.IsSafeSourceId(slashed.Id)
+                        && !JsonPaths.IsSafeSourceId(empty.Id)
+                        && !JsonPaths.IsSafeSourceId(tooLong.Id);
                 });
 
                 failed += Check("removing the active source falls back to the local mailbox", () =>

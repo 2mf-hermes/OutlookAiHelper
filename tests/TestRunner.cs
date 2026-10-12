@@ -24,6 +24,7 @@ namespace OutlookAiHelper.TestHost
             failed += GraphReaderTests.Run();
             failed += GraphSignInTests.Run();
             failed += SignInReasonTests.Run();
+            failed += CloudModuleHiddenTests.Run();
             if (failed == 0)
             {
                 Console.WriteLine("ALL TESTS PASSED");

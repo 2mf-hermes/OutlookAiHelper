@@ -45,14 +45,22 @@ namespace OutlookAiHelper.Adapters.Mail
         }
 
         /// <summary>
-        /// True now that the Graph reader is in this folder, and a switch rather than a scattered
-        /// set of checks so that turning the cloud path off again stays a one line change.
+        /// False in this build: the cloud module is hidden.
+        ///
+        /// The reader, the sign-in and the settings screen for a cloud mailbox are all in the folder,
+        /// but no build ships a client id yet, so a cloud source could only be offered and then
+        /// refused -- and a screen that offers a source it cannot read is worse than one that does
+        /// not mention it at all.
+        ///
+        /// A switch rather than a scattered set of checks, so that turning the cloud path back on
+        /// stays a one line change -- and so that a client id arriving in the code cannot put a
+        /// cloud source on the screen on its own.
         ///
         /// It is only half of the answer. A registration the app cannot use still means no reader,
         /// because a source the UI is told about has to be one Create can actually build -- see
         /// IsImplemented, which both the UI and Create ask.
         /// </summary>
-        private static readonly bool GraphReaderAvailable = true;
+        private static readonly bool GraphReaderAvailable = false;
 
         /// <summary>
         /// Returns null when the kind has no reader yet. The local reader is passed in

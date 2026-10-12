@@ -112,23 +112,25 @@ namespace OutlookAiHelper.Tests
                     == "https://graph.microsoft.com/v1.0/me/mailFolders/AAMkAD%20A%3D/messages"
                 && GraphApp.MailFoldersUrl == "https://graph.microsoft.com/v1.0/me/mailFolders");
 
-            failed += Check("the UI can never be told a source is available that the factory refuses to build", () =>
+            failed += Check("a registration on its own cannot open a cloud source while the module is hidden", () =>
             {
-                // Both sides are asked with one registration, which is what makes this a statement
-                // instead of a tautology: while the cloud path was switched off both sides were
-                // false for the same trivial reason. Now the left side is true for a registration
-                // this build can use, so the right side has to be too -- as an actual reader.
+                // The client id below is well formed, and that is the point: while the cloud module is
+                // hidden the switch is the outer answer for every cloud kind, so a registration the app
+                // could use still cannot put a source on the screen that this build ships no
+                // registration for.
                 //
-                // A kind on its own stays null for a cloud source, and deliberately so: without the
+                // The local mailbox is asked with the same registration, so the check cannot pass by
+                // refusing everything.
+                //
+                // A kind on its own stays null for a cloud source too, and deliberately so: without the
                 // source there is no stored sign-in to look for, and a reader that guessed would fail
                 // at the first request with "not signed in" rather than not being built at all.
                 var id = "11111111-2222-3333-4444-555555555555";
                 var source = new MailSourceProfile { Id = "cloud-1", Kind = MailSourceKind.Graph };
-                var built = MailReaderFactory.Create(source, null, id) as GraphMailReader;
 
-                return MailReaderFactory.IsImplemented(MailSourceKind.Graph, id)
-                    && built != null
-                    && built.ClientId == id
+                return !MailReaderFactory.IsImplemented(MailSourceKind.Graph, id)
+                    && MailReaderFactory.IsImplemented(MailSourceKind.LocalOutlook, id)
+                    && MailReaderFactory.Create(source, null, id) == null
                     && MailReaderFactory.Create(MailSourceKind.Graph, null) == null;
             });
 
