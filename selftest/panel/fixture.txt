@@ -1,0 +1,13 @@
+# The follow-up and the two mails of its topic that the panel harness displays.
+# key=value, one per line. Display text lives here, not in the .cs, so it survives the compiler's
+# codepage. entryId is what links the follow-up to its mail in the scan.
+entryId=smoke-entry-1
+title=[smoke] 待回覆報價單
+note=自動化煙霧測試資料
+sender=王小明
+address=wm@example.com
+folder=收件匣\客戶
+quadrant=緊急重要
+subject=[smoke] 待回覆報價單
+replyPrefix=RE: 
+reasonDetail=主旨含「報價」關鍵字

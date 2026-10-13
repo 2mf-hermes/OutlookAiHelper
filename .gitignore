@@ -11,6 +11,10 @@ err.txt
 startup-diag.log*
 *.tmp
 
+# Output of selftest\run_panel.ps1 - the rendered panel log and its screenshots.
+selftest/panel-out.txt
+selftest/panel-out*.png
+
 # Scratch note that was superseded by the code in MainWindow.cs.
 ai_patch.txt
 

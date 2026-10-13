@@ -1,0 +1,104 @@
+# What the right-hand panel must show. Read by d2\panelharness.cs; fixture.txt holds the text shown.
+# expect= / absent=    must / must not be VISIBLE with the follow-up's mail in the scan
+# expect2= / absent2=  must / must not be VISIBLE with the mail out of the scan
+# Matching is exact and only counts text that is really on screen.
+
+# --- pass 1: the mail is in the scan -------------------------------------------------------
+# the two section headers this change added, plus the cards around them
+expect=郵件資訊
+expect=操作
+# the mail card: one field per row, in this order
+expect=寄件者
+expect=時間
+expect=資料夾
+expect=象限
+expect=狀態
+# ... and the state of the mail as capsules, not as one sentence: two 44px-wide texts sharing the
+# row under the 狀態 label, so each is its own TextBlock and can be asserted on its own.
+# (The reason row composes its label with the detail and a '+n' count into one string, so that
+#  label cannot be asserted exactly; the two capsules are the sharper evidence.)
+expect=尚未讀取
+expect=會議邀請
+# the values themselves, straight from the fixture
+expect=王小明
+expect=收件匣\客戶
+expect=[smoke] 待回覆報價單
+# the follow-up card and its own facts
+expect=待回待辦
+expect=建立時間
+expect=更新時間
+expect=自動化煙霧測試資料
+# the reason card and the topic card
+expect=為什麼在這裡
+expect=有關的信
+# the mail can be opened, but through the follow-up card's own action: while a follow-up is up,
+# the mail-level "open in Outlook" stands down so the two would not be duplicates on screen.
+expect=開啟原信
+expect=AI 說明
+# with the mail in the scan there is nothing to apologise for
+absent=這封郵件不在目前的掃描範圍內，僅顯示待辦記錄的資訊。
+absent=在 Outlook 開啟
+
+# --- pass 2: the follow-up's mail is out of the scan ---------------------------------------
+expect2=為什麼在這裡
+expect2=待回待辦
+expect2=操作
+expect2=狀態
+expect2=象限
+expect2=建立時間
+expect2=更新時間
+expect2=自動化煙霧測試資料
+expect2=這封郵件不在目前的掃描範圍內，僅顯示待辦記錄的資訊。
+# the follow-up still remembers its entry id, so the mail can still be opened: the follow-up card's
+# action is enabled by the remembered id, not by the mail being in the current scan.
+expect2=開啟原信
+# the whole mail card leaves the page when there is no mail to describe
+absent2=郵件資訊
+absent2=寄件者
+absent2=資料夾
+absent2=尚未讀取
+absent2=會議邀請
+absent2=在 Outlook 開啟
+absent2=有關的信
+# (the follow-up's own editor stays up in this pass - it is the follow-up that is selected - so
+#  儲存備註 and 設定到期日 are expected on screen here, not off it. Pass 3 checks the opposite.)
+
+# --- pass 3: a mail row selected from the list, with no follow-up behind it -----------------
+# the same mail card, but this time with nothing recorded about the mail yet
+expect3=郵件資訊
+expect3=寄件者
+expect3=時間
+expect3=資料夾
+expect3=象限
+expect3=狀態
+expect3=尚未讀取
+expect3=會議邀請
+expect3=王小明
+expect3=收件匣\客戶
+expect3=為什麼在這裡
+# the topic card is a follow-up card and stays down on this path, which is how the app already
+# behaved at v1.2.0 (47e1802 MainWindow.cs:2421 takes it down with the follow-up block)
+absent3=有關的信
+# with no follow-up block up, the mail-level action is the one that opens the mail
+expect3=在 Outlook 開啟
+expect3=AI 說明
+# the follow-up block and its editor left the page with the selection
+absent3=待回待辦
+absent3=開啟原信
+absent3=儲存備註
+absent3=設定到期日
+absent3=自動化煙霧測試資料
+# and no apology, because this mail is in the scan
+absent3=這封郵件不在目前的掃描範圍內，僅顯示待辦記錄的資訊。
+
+# --- pass 4: the follow-up's topic holds no other mail -------------------------------------
+# the same follow-up as pass 1, but this time its topic is the one mail
+expect4=郵件資訊
+expect4=寄件者
+expect4=王小明
+expect4=為什麼在這裡
+expect4=待回待辦
+expect4=儲存備註
+# an empty topic card must not stand there: the app keeps it down when the topic holds one mail
+# (MainWindow.TodoDetail.cs:222, which predates this change)
+absent4=有關的信
