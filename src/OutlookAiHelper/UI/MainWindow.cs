@@ -57,7 +57,15 @@ namespace OutlookAiHelper.UI
         private FrameworkElement _navHost;
         private Button _sidebarToggle;
         private TextBlock _detailTitle;
-        private TextBlock _detailMeta;
+
+        /// <summary>
+        /// The panel's scroll host and the two cards the renderer fills per selection. All three
+        /// are built with the panel and stay null until BuildDetail has run.
+        /// </summary>
+        private ScrollViewer _detailScroll;
+        private StackPanel _mailFactsBlock;
+        private StackPanel _mailFactsRows;
+        private StackPanel _reasonBlock;
         private TextBlock _statusText;
         private TextBlock _todoEmpty;
         private ProgressBar _progress;
@@ -814,16 +822,7 @@ namespace OutlookAiHelper.UI
                 Margin = new Thickness(0, 0, 0, 14),
                 LineHeight = 34
             };
-            _detailMeta = new TextBlock
-            {
-                FontSize = UiKit.TypeFootnote,
-                FontWeight = FontWeights.Medium,
-                Foreground = Theme.MutedBrush,
-                TextWrapping = TextWrapping.Wrap,
-                LineHeight = 18,
-                Margin = new Thickness(0, 0, 0, 10)
-            };
-            _reasonPanel = new StackPanel();
+
             _reclassifyButton = UiKit.Secondary(Strings.T("action.reclassify"), OnReclassifyClick);
             _reclassifyButton.HorizontalAlignment = HorizontalAlignment.Stretch;
             _reclassifyButton.Margin = new Thickness(0, 12, 0, 0);
@@ -841,9 +840,14 @@ namespace OutlookAiHelper.UI
             _aiAction.Margin = new Thickness(0, 8, 0, 0);
             _aiAction.IsEnabled = false;
             stack.Children.Add(_detailTitle);
-            stack.Children.Add(_detailMeta);
-            stack.Children.Add(UiKit.Subtitle(Strings.T("reason.title")));
-            stack.Children.Add(_reasonPanel);
+
+            // One card per question: what the mail is, why it is here, what else was said in the
+            // topic, what has been recorded about it, and what can be done with it.
+            _mailFactsBlock = BuildMailFactsBlock();
+            stack.Children.Add(_mailFactsBlock);
+
+            _reasonBlock = BuildReasonBlock();
+            stack.Children.Add(_reasonBlock);
 
             // The follow-up's conversation: what else was said in the topic this mail came from,
             // so a reply can be written knowing the rest of it. Filled per selection, and down
@@ -854,9 +858,7 @@ namespace OutlookAiHelper.UI
             _todoActions = BuildTodoActionsPanel();
             stack.Children.Add(_todoActions);
             stack.Children.Add(_openOutlookButton);
-            stack.Children.Add(_reclassifyButton);
-            stack.Children.Add(_addTodoButton);
-            stack.Children.Add(_aiAction);
+            stack.Children.Add(BuildActionBlock());
 
             var close = new Button
             {
@@ -874,7 +876,16 @@ namespace OutlookAiHelper.UI
             };
             close.Click += (s, e) => HideDetail();
             var host = new Grid();
-            host.Children.Add(UiKit.GlassPlate(stack, UiKit.RadiusCard, new Thickness(18, 16, 18, 16)));
+            // The panel scrolls: a card list can outgrow the window, and the follow-up card alone
+            // is tall. The bar only takes room when it is needed.
+            _detailScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Padding = new Thickness(0, 0, 6, 0),
+                Content = stack
+            };
+            host.Children.Add(UiKit.GlassPlate(_detailScroll, UiKit.RadiusCard, new Thickness(18, 16, 18, 16)));
             host.Children.Add(close);
             return host;
         }
@@ -2447,7 +2458,8 @@ namespace OutlookAiHelper.UI
                 }
 
                 _detailTitle.Text = string.Empty;
-                _detailMeta.Text = string.Empty;
+                ClearMailFacts();
+                SetReasonBlockVisible(false);
                 _reasonPanel.Children.Clear();
                 return;
             }
@@ -2461,11 +2473,10 @@ namespace OutlookAiHelper.UI
             }
 
             _detailTitle.Text = item.Mail.Subject;
-            _detailMeta.Text = Strings.T("detail.from") + ": " + item.Mail.FromName
-                + "\n" + Strings.T("detail.time") + ": " + item.Mail.ReceivedOn.ToString("yyyy-MM-dd HH:mm")
-                + "\n" + Strings.T("detail.folder") + ": " + item.Mail.FolderPath;
+            FillMailFacts(item);
 
             _reasonPanel.Children.Clear();
+            SetReasonBlockVisible(item.Classification.Reasons.Count > 0);
             foreach (var reason in item.Classification.Reasons)
             {
                 var label = Strings.T(reason.LabelKey);
@@ -2477,7 +2488,7 @@ namespace OutlookAiHelper.UI
                     FontSize = UiKit.TypeSubhead,
                     Foreground = Theme.InkBrush,
                     TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(0, 0, 0, 8)
+                    Margin = new Thickness(16, 8, 16, 8)
                 });
             }
         }

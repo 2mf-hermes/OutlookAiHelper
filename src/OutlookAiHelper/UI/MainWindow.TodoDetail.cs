@@ -111,28 +111,9 @@ namespace OutlookAiHelper.UI
 
             _detailTitle.Text = item.Title;
 
-            var meta = new StringBuilder();
-            meta.Append(Strings.T("todo.detail.state"))
-                .Append(": ")
-                .Append(Strings.T(item.Status == TodoStatus.Done ? "todo.filter.done" : "todo.filter.open"));
-
-            if (!string.IsNullOrEmpty(item.QuadrantHint))
-            {
-                meta.Append("\n").Append(Strings.T("todo.detail.quadrant")).Append(": ").Append(item.QuadrantHint);
-            }
-
-            meta.Append("\n").Append(Strings.T("todo.detail.created")).Append(": ")
-                .Append(item.CreatedOn.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
-            meta.Append("\n").Append(Strings.T("todo.detail.updated")).Append(": ")
-                .Append(item.UpdatedOn.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
-
-            if (item.DueOn.HasValue)
-            {
-                meta.Append("\n").Append(Strings.T("todo.detail.due")).Append(": ")
-                    .Append(item.DueOn.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
-            }
-
-            _detailMeta.Text = meta.ToString();
+            ClearMailFacts();
+            FillTodoFacts(item);
+            SetReasonBlockVisible(true);
 
             _reasonPanel.Children.Clear();
             _reasonPanel.Children.Add(new TextBlock
@@ -140,7 +121,8 @@ namespace OutlookAiHelper.UI
                 Text = Strings.T("todo.detail.mailMissing"),
                 FontSize = UiKit.TypeSubhead,
                 Foreground = Theme.MutedBrush,
-                TextWrapping = TextWrapping.Wrap
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(16, 8, 16, 10)
             });
         }
 
@@ -209,18 +191,15 @@ namespace OutlookAiHelper.UI
         }
 
         /// <summary>
-        /// The block that lists every mail of the follow-up's topic, newest first by default.
+        /// The card that lists every mail of the follow-up's topic, newest first by default.
         /// It is built with the panel and shown or hidden per selection, so the panel keeps one
         /// layout instead of growing a second heading.
         /// </summary>
         private StackPanel BuildRelatedBlock()
         {
-            var block = new StackPanel { Visibility = Visibility.Collapsed };
-            block.Children.Add(UiKit.Subtitle(Strings.T("todo.detail.related")));
-
-            _relatedPanel = new StackPanel();
-            block.Children.Add(_relatedPanel);
-            return block;
+            _relatedPanel = UiKit.ListRows();
+            _relatedBlock = DetailBlock(Strings.T("todo.detail.related"), _relatedPanel);
+            return _relatedBlock;
         }
 
         /// <summary>

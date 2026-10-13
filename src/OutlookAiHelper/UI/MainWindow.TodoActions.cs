@@ -31,8 +31,8 @@ namespace OutlookAiHelper.UI
         private static readonly int[] DueOffsets = { 0, 1, 3, 7, 30 };
 
         private StackPanel _todoActions;
+        private StackPanel _todoFactsRows;
         private TextBlock _todoWaitText;
-        private TextBlock _todoDueText;
         private TextBox _todoNoteInput;
         private Button _todoOpenMailButton;
         private ComboBox _todoDuePicker;
@@ -57,11 +57,7 @@ namespace OutlookAiHelper.UI
         /// </summary>
         private StackPanel BuildTodoActionsPanel()
         {
-            var panel = new StackPanel
-            {
-                Visibility = Visibility.Collapsed,
-                Margin = new Thickness(0, 10, 0, 2)
-            };
+            var rows = UiKit.ListRows();
 
             _todoWaitText = new TextBlock
             {
@@ -69,18 +65,32 @@ namespace OutlookAiHelper.UI
                 FontWeight = FontWeights.SemiBold,
                 Foreground = Theme.MutedBrush,
                 TextWrapping = TextWrapping.Wrap,
-                LineHeight = 20
+                LineHeight = 20,
+                Margin = new Thickness(16, 10, 16, 12)
             };
-            panel.Children.Add(_todoWaitText);
+            rows.Children.Add(_todoWaitText);
 
-            _todoDueText = new TextBlock
-            {
-                FontSize = UiKit.TypeCaption,
-                Foreground = Theme.MutedBrush,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 8, 0, 6)
-            };
-            panel.Children.Add(_todoDueText);
+            _todoFactsRows = UiKit.ListRows();
+            rows.Children.Add(_todoFactsRows);
+            rows.Children.Add(DetailRule());
+
+            var editor = new StackPanel { Margin = new Thickness(16, 10, 16, 14) };
+
+            editor.Children.Add(UiKit.Caption(Strings.T("todo.detail.note")));
+            _todoNoteInput = UiKit.Input(string.Empty);
+            WithName(_todoNoteInput, Strings.T("todo.detail.note"));
+            _todoNoteInput.AcceptsReturn = true;
+            _todoNoteInput.TextWrapping = TextWrapping.Wrap;
+            _todoNoteInput.Height = 64;
+            _todoNoteInput.VerticalContentAlignment = VerticalAlignment.Top;
+            _todoNoteInput.ToolTip = Strings.T("todo.note.placeholder");
+            _todoNoteInput.Margin = new Thickness(0, 6, 0, 0);
+            editor.Children.Add(_todoNoteInput);
+
+            var save = UiKit.Secondary(Strings.T("todo.note.save"), (s, e) => SaveTodoNote());
+            save.HorizontalAlignment = HorizontalAlignment.Left;
+            save.Margin = new Thickness(0, 8, 0, 0);
+            editor.Children.Add(save);
 
             _todoDuePicker = UiKit.Select();
             WithName(_todoDuePicker, Strings.T("todo.action.setDue"));
@@ -95,29 +105,17 @@ namespace OutlookAiHelper.UI
 
             _todoDuePicker.SelectedIndex = 0;
             _todoDuePicker.SelectionChanged += (s, e) => OnTodoDueChanged();
-            panel.Children.Add(_todoDuePicker);
-
-            panel.Children.Add(UiKit.Caption(Strings.T("todo.detail.note")));
-            _todoNoteInput = UiKit.Input(string.Empty);
-            WithName(_todoNoteInput, Strings.T("todo.detail.note"));
-            _todoNoteInput.AcceptsReturn = true;
-            _todoNoteInput.TextWrapping = TextWrapping.Wrap;
-            _todoNoteInput.Height = 64;
-            _todoNoteInput.VerticalContentAlignment = VerticalAlignment.Top;
-            _todoNoteInput.ToolTip = Strings.T("todo.note.placeholder");
-            panel.Children.Add(_todoNoteInput);
-
-            var save = UiKit.Secondary(Strings.T("todo.note.save"), (s, e) => SaveTodoNote());
-            save.HorizontalAlignment = HorizontalAlignment.Left;
-            save.Margin = new Thickness(0, 8, 0, 0);
-            panel.Children.Add(save);
+            _todoDuePicker.Margin = new Thickness(0, 8, 0, 0);
+            editor.Children.Add(_todoDuePicker);
 
             _todoOpenMailButton = UiKit.Secondary(Strings.T("todo.action.openMail"), (s, e) => OpenTodoSourceMail(_detailTodo));
             _todoOpenMailButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-            _todoOpenMailButton.Margin = new Thickness(0, 8, 0, 0);
-            panel.Children.Add(_todoOpenMailButton);
+            _todoOpenMailButton.Margin = new Thickness(0, 10, 0, 0);
+            editor.Children.Add(_todoOpenMailButton);
 
-            return panel;
+            rows.Children.Add(editor);
+
+            return DetailBlock(Strings.T("todo.title"), rows);
         }
 
         private static string DueChoiceLabel(int offset)
@@ -144,6 +142,7 @@ namespace OutlookAiHelper.UI
                 }
 
                 _detailTodo = item;
+                FillTodoFacts(item);
                 var now = DateTime.UtcNow;
 
                 if (_todoWaitText != null)
@@ -152,11 +151,6 @@ namespace OutlookAiHelper.UI
                     _todoWaitText.Text = text ?? string.Empty;
                     _todoWaitText.Foreground = WaitingStatusBrush(item, now);
                     _todoWaitText.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
-                }
-
-                if (_todoDueText != null)
-                {
-                    _todoDueText.Text = Strings.T("todo.detail.due") + ": " + DescribeDue(item);
                 }
 
                 if (_todoNoteInput != null)
