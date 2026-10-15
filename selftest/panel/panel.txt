@@ -102,3 +102,13 @@ expect4=儲存備註
 # an empty topic card must not stand there: the app keeps it down when the topic holds one mail
 # (MainWindow.TodoDetail.cs:222, which predates this change)
 absent4=有關的信
+
+# --- pass 5: a related mail of the topic is clicked ------------------------------------------
+# Pass 1 shows the same follow-up and asserts 在 Outlook 開啟 is NOT on screen while its own mail
+# fills the card. Clicking the other mail of the topic puts that mail's facts in the card above,
+# and the card's own open action comes back for it -- that visible/absent pair with pass 1 is what
+# makes this pass evidence, on top of the target the harness checks directly (mailOpenTarget).
+# Nothing must leave the page for this state, so there is no absent5= line.
+expect5=郵件資訊
+expect5=開啟原信
+expect5=在 Outlook 開啟

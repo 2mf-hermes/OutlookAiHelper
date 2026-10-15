@@ -99,6 +99,7 @@ namespace OutlookAiHelper.UI
         private bool _aiUiSync;
         private Button _aiAction;
         private Button _openOutlookButton;
+        private string _mailFactsEntryId;
         private Panel _emptyPanel;
         private Panel _errorPanel;
         private Panel _listPanel;
@@ -831,10 +832,6 @@ namespace OutlookAiHelper.UI
             _addTodoButton.HorizontalAlignment = HorizontalAlignment.Stretch;
             _addTodoButton.Margin = new Thickness(0, 8, 0, 0);
             _addTodoButton.IsEnabled = false;
-            _openOutlookButton = UiKit.Secondary(Strings.T("action.openInOutlook"), OnOpenInOutlookClick);
-            _openOutlookButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-            _openOutlookButton.Margin = new Thickness(0, 12, 0, 0);
-            _openOutlookButton.IsEnabled = false;
             _aiAction = UiKit.Secondary(Strings.T("ai.action"), OnAiActionClick);
             _aiAction.HorizontalAlignment = HorizontalAlignment.Stretch;
             _aiAction.Margin = new Thickness(0, 8, 0, 0);
@@ -857,7 +854,6 @@ namespace OutlookAiHelper.UI
 
             _todoActions = BuildTodoActionsPanel();
             stack.Children.Add(_todoActions);
-            stack.Children.Add(_openOutlookButton);
             stack.Children.Add(BuildActionBlock());
 
             var close = new Button
@@ -2451,7 +2447,6 @@ namespace OutlookAiHelper.UI
             {
                 _reclassifyButton.IsEnabled = false;
                 _addTodoButton.IsEnabled = false;
-                if (_openOutlookButton != null) _openOutlookButton.IsEnabled = false;
                 if (_aiAction != null)
                 {
                     _aiAction.IsEnabled = false;
@@ -2466,7 +2461,6 @@ namespace OutlookAiHelper.UI
 
             _reclassifyButton.IsEnabled = true;
             _addTodoButton.IsEnabled = true;
-            if (_openOutlookButton != null) _openOutlookButton.IsEnabled = true;
             if (_aiAction != null)
             {
                 _aiAction.IsEnabled = true;
@@ -2676,10 +2670,14 @@ namespace OutlookAiHelper.UI
         {
             try
             {
-                // A follow-up shown without its scanned mail still knows its entry id.
-                var entryId = _selected != null && !string.IsNullOrEmpty(_selected.Mail.EntryId)
-                    ? _selected.Mail.EntryId
-                    : _detailEntryId;
+                // The button lives in the mail card, so it opens the mail that card is describing --
+                // the related mail too, once one has been picked out of the topic.
+                var entryId = _mailFactsEntryId;
+                if (string.IsNullOrEmpty(entryId))
+                {
+                    // A follow-up shown without its scanned mail still knows its entry id.
+                    entryId = _detailEntryId;
+                }
                 if (string.IsNullOrEmpty(entryId))
                 {
                     return;

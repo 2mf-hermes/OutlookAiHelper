@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -113,7 +114,28 @@ namespace OutlookAiHelper.UI
         private StackPanel BuildMailFactsBlock()
         {
             _mailFactsRows = UiKit.ListRows();
-            return DetailBlock(Strings.T("detail.section.mail"), _mailFactsRows);
+
+            // The facts and the one action they describe share the card: opening the mail the
+            // card is showing belongs next to the mail itself, not as a loose button below.
+            var content = new StackPanel();
+            content.Children.Add(_mailFactsRows);
+            content.Children.Add(BuildMailOpenButton());
+            return DetailBlock(Strings.T("detail.section.mail"), content);
+        }
+
+        /// <summary>
+        /// The card's own action: open the mail the card is describing in Outlook. It is built once
+        /// with the panel and shown or hidden per selection -- while the card describes the mail a
+        /// follow-up was made from, the follow-up card already carries the same action, so this one
+        /// stands down rather than print two buttons that do one thing.
+        /// </summary>
+        private Button BuildMailOpenButton()
+        {
+            _openOutlookButton = UiKit.Secondary(Strings.T("action.openInOutlook"), OnOpenInOutlookClick);
+            _openOutlookButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _openOutlookButton.Margin = new Thickness(16, 4, 16, 14);
+            _openOutlookButton.IsEnabled = false;
+            return _openOutlookButton;
         }
 
         /// <summary>
@@ -151,9 +173,11 @@ namespace OutlookAiHelper.UI
             }
 
             _mailFactsRows.Children.Clear();
+            _mailFactsEntryId = null;
             if (item == null || item.Mail == null)
             {
                 _mailFactsBlock.Visibility = Visibility.Collapsed;
+                UpdateMailOpenButton();
                 return;
             }
 
@@ -163,7 +187,9 @@ namespace OutlookAiHelper.UI
                 AddDetailRow(_mailFactsRows, rows[i], i == rows.Count - 1);
             }
 
+            _mailFactsEntryId = item.Mail.EntryId;
             _mailFactsBlock.Visibility = Visibility.Visible;
+            UpdateMailOpenButton();
         }
 
         /// <summary>Empties the mail card and takes it down; the follow-up-only view has no mail to describe.</summary>
@@ -178,6 +204,30 @@ namespace OutlookAiHelper.UI
             {
                 _mailFactsBlock.Visibility = Visibility.Collapsed;
             }
+
+            _mailFactsEntryId = null;
+            UpdateMailOpenButton();
+        }
+
+        /// <summary>
+        /// Points the card's open action at the mail the card is showing, and takes it down when
+        /// there is nothing to open -- or when the follow-up card is up and already carries the
+        /// same action for that very mail, so the two do not repeat each other.
+        /// </summary>
+        private void UpdateMailOpenButton()
+        {
+            if (_openOutlookButton == null)
+            {
+                return;
+            }
+
+            var openable = !string.IsNullOrEmpty(_mailFactsEntryId);
+            var duplicate = openable
+                && _detailTodo != null
+                && string.Equals(_mailFactsEntryId, _detailTodo.SourceEntryId, StringComparison.OrdinalIgnoreCase);
+
+            _openOutlookButton.IsEnabled = openable;
+            _openOutlookButton.Visibility = (openable && !duplicate) ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>The facts of the mail itself, in the order the panel reads them.</summary>

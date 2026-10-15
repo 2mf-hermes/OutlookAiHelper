@@ -95,18 +95,14 @@ namespace OutlookAiHelper.UI
                 return;
             }
 
-            // Only the actions that need a scanned mail are switched off; opening the
-            // original in Outlook works off the stored entry id.
+            // Only the actions that need a scanned mail are switched off; the follow-up card's own
+            // action still opens the original off the stored entry id. The mail card stays down, so
+            // its open action leaves the page with it.
             _reclassifyButton.IsEnabled = false;
             _addTodoButton.IsEnabled = false;
             if (_aiAction != null)
             {
                 _aiAction.IsEnabled = false;
-            }
-
-            if (_openOutlookButton != null)
-            {
-                _openOutlookButton.IsEnabled = !string.IsNullOrEmpty(item.SourceEntryId);
             }
 
             _detailTitle.Text = item.Title;

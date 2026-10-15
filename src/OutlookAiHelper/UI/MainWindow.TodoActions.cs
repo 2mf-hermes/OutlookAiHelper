@@ -167,6 +167,7 @@ namespace OutlookAiHelper.UI
 
                 ResetDuePicker();
                 SetTodoActionsVisible(true);
+                UpdateMailOpenButton();
             }
             catch (Exception ex)
             {
@@ -175,8 +176,8 @@ namespace OutlookAiHelper.UI
         }
 
         /// <summary>
-        /// Turns the follow-up block on or off. The block carries its own "open the
-        /// original" action, so the mail-level button would be a duplicate while it is up.
+        /// Turns the follow-up block on or off. The mail card's own open action hides itself while
+        /// it shows the follow-up's own mail (UpdateMailOpenButton), so the two never duplicate.
         /// </summary>
         private void SetTodoActionsVisible(bool visible)
         {
@@ -188,11 +189,6 @@ namespace OutlookAiHelper.UI
             if (!visible)
             {
                 _detailTodo = null;
-            }
-
-            if (_openOutlookButton != null)
-            {
-                _openOutlookButton.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
             }
         }
 

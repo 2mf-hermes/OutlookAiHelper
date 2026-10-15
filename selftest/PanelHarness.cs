@@ -11,6 +11,7 @@
 //     expect2= / absent2= pass 2: a follow-up is selected, its mail is out of the scan
 //     expect3= / absent3= pass 3: a mail row is selected from the list, no follow-up behind it
 //     expect4= / absent4= pass 4: a follow-up is selected, its topic holds no other mail
+//     expect5= / absent5= pass 5: a follow-up is selected and one of its related mails is clicked
 //   Only text that is actually on screen counts: an element inside a collapsed card is in the tree
 //   with a zero size, and used to read as a pass by mistake.
 //
@@ -135,6 +136,20 @@ internal static class PanelHarness
             exit |= Pass(win, host, items, todo, "ShowTodoDetail", new ScanResultItem[] { source },
                 "the follow-up's topic holds no other mail", fx, "expect4", "absent4", 4, outPng);
 
+            // A click on a related mail walks back to the follow-up through the window's own store,
+            // so the harness's follow-up has to be in it (in memory only - nothing is saved).
+            IList todos = Todos(win);
+            if (todos != null && !todos.Contains(todo))
+            {
+                todos.Add(todo);
+            }
+
+            // The related mail of the topic, clicked the way its row's handler reaches it: that
+            // mail's own facts go into the card above, and the card's own open action comes back.
+            exit |= Pass(win, host, items, todo, "ShowTodoDetail", new ScanResultItem[] { source, reply },
+                "a related mail of the topic is clicked", fx, "expect5", "absent5", 5, outPng,
+                "OnRelatedMailClick", reply);
+
             win.Close();
             app.Shutdown();
         }
@@ -153,7 +168,8 @@ internal static class PanelHarness
 
     private static int Pass(Window win, FrameworkElement host, IList items, object subject,
         string entry, ScanResultItem[] mails, string caption, Dictionary<string, string> fx,
-        string expectKey, string absentKey, int index, string pngBase)
+        string expectKey, string absentKey, int index, string pngBase,
+        string afterEntry = null, object afterArg = null)
     {
         int exit = 0;
         Say("=== pass " + index + ": " + caption + " ===");
@@ -174,6 +190,16 @@ internal static class PanelHarness
         {
             Say("  FATAL: the panel's entry point " + entry + "() is not reachable by reflection.");
             return 4;
+        }
+
+        if (afterEntry != null)
+        {
+            Say("  then " + afterEntry + "() with the related mail, the way a click on its row reaches it");
+            if (!Invoke(win, afterEntry, afterArg))
+            {
+                Say("  FATAL: the panel's entry point " + afterEntry + "() is not reachable by reflection.");
+                return 4;
+            }
         }
 
         Pump();
@@ -277,6 +303,13 @@ internal static class PanelHarness
         }
 
         Say("");
+
+        var clicked = afterArg as ScanResultItem;
+        if (clicked != null)
+        {
+            exit |= CheckOpenTarget(win, clicked.Mail.EntryId);
+        }
+
         exit |= Assert(fx, expectKey, visible, true);
         exit |= Assert(fx, absentKey, visible, false);
         Say("");
@@ -311,6 +344,43 @@ internal static class PanelHarness
 
         Say("  " + key + ": " + ok + "/" + wanted2.Length);
         return ok == wanted2.Length ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Text alone cannot prove the card's open action points at the related mail the click
+    /// picked -- the follow-up card carries its own open button -- so the target the handler
+    /// reads is checked here, plus that the button is really on screen and clickable.
+    /// </summary>
+    private static int CheckOpenTarget(Window win, string wantedEntryId)
+    {
+        int ok = 0;
+        int total = 3;
+
+        string target = Field(win, "_mailFactsEntryId") as string;
+        if (string.Equals(target, wantedEntryId, StringComparison.OrdinalIgnoreCase)) ok++;
+        else Say("    TARGET: the card's open action points at '" + (target ?? "(none)") + "', not '" + wantedEntryId + "'");
+
+        Button button = Field(win, "_openOutlookButton") as Button;
+        if (button != null && button.IsEnabled) ok++;
+        else Say("    TARGET: the card's open button is not enabled");
+
+        if (button != null && OnScreen(button)) ok++;
+        else Say("    TARGET: the card's open button is not on screen");
+
+        Say("  mailOpenTarget: " + ok + "/" + total);
+        return ok == total ? 0 : 1;
+    }
+
+    private static IList Todos(Window win)
+    {
+        object useCase = Field(win, "_todos");
+        if (useCase == null)
+        {
+            return null;
+        }
+
+        PropertyInfo p = useCase.GetType().GetProperty("Items", BindingFlags.Instance | BindingFlags.Public);
+        return p == null ? null : p.GetValue(useCase, null) as IList;
     }
 
     // ------------------------------------------------------------------ reflection
@@ -518,7 +588,7 @@ internal static class PanelHarness
         }
 
         // The assertion keys repeat by design; the caller reads them from the joined lists below.
-        foreach (string k in new string[] { "expect", "absent", "expect2", "absent2", "expect3", "absent3", "expect4", "absent4" })
+        foreach (string k in new string[] { "expect", "absent", "expect2", "absent2", "expect3", "absent3", "expect4", "absent4", "expect5", "absent5" })
         {
             var vals = new List<string>();
             foreach (KeyValuePair<string, string> kv in fx)

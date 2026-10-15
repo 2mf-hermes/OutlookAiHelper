@@ -718,6 +718,6 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - 動作按鈕由三顆散落的按鈕合成一張「操作」卡（`BuildActionBlock`）。
 - 新增字串鍵：`detail.section.mail`（郵件資訊）、`detail.section.actions`（操作），三語齊備。
 - 這一版的面板程式碼放在新的 partial 檔 `UI/MainWindow.Detail.cs`；`build.ps1` 以萬用字元收源碼，所以不必動建置設定，測試數不變（209）。
-- 面板 harness 進版控（這一節的驗證方式，任何人都能重跑）：`selftest/PanelHarness.cs` 是四次狀態的驅動程式，`selftest/panel/panel.txt` 是各次斷言的字串、`selftest/panel/fixture.txt` 是畫面文字（中文放資料檔，避免 .cs 直寫中文被編譯器用主控台編碼讀壞）；執行 `powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1` 不需參數，會先確認 `dist\OutlookAiHelper.exe` 不比原始碼舊、編譯 harness、跑完四種狀態，最後印出「N/M 條斷言在畫面上」與 exit code，並在 `selftest\` 留下 `panel-out.txt` 與四張 `panel-out-*.png`（輸出檔已列進 `.gitignore`）。
+- 面板 harness 進版控（這一節的驗證方式，任何人都能重跑）：`selftest/PanelHarness.cs` 是五次狀態的驅動程式，`selftest/panel/panel.txt` 是各次斷言的字串、`selftest/panel/fixture.txt` 是畫面文字（中文放資料檔，避免 .cs 直寫中文被編譯器用主控台編碼讀壞）；執行 `powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1` 不需參數，會先確認 `dist\OutlookAiHelper.exe` 不比原始碼舊、編譯 harness、跑完五種狀態，最後印出「N/M 條斷言在畫面上」與 exit code，並在 `selftest\` 留下 `panel-out.txt` 與五張 `panel-out-*.png`（輸出檔已列進 `.gitignore`）。
 
-**驗證方式**：右側面板在沒有點選前列是收合的，而合成點擊需要前景——無人桌面給不了，所以那一條 smoke 檢查一直是 SKIP。改用**同處理序**（in-process）harness：把視窗開在同一個處理序裡，直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail`），再走視覺樹讀回畫面上真正看得見的文字。四種狀態共 66 條斷言：待辦選取且信在掃描內、待辦選取但信不在掃描內、從郵件清單點一列（沒有待辦）、待辦的主題只有自己一封信（主題卡必須收合而不是空著）。
+**驗證方式**：右側面板在沒有點選前列是收合的，而合成點擊需要前景——無人桌面給不了，所以那一條 smoke 檢查一直是 SKIP。改用**同處理序**（in-process）harness：把視窗開在同一個處理序裡，直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail` / `OnRelatedMailClick`），再走視覺樹讀回畫面上真正看得見的文字。五種狀態共 72 條斷言：待辦選取且信在掃描內、待辦選取但信不在掃描內、從郵件清單點一列（沒有待辦）、待辦的主題只有自己一封信（主題卡必須收合而不是空著）、待辦的主題中的另一封信被點擊（郵件資訊卡的那個開啟動作必須跟著換到那一封，harness 另外直接檢查它指向的那個 entry id）。
