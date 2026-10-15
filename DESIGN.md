@@ -701,22 +701,23 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - `IsMeetingRequest` 對應到 Graph 的哪個欄位。
 - 該租用戶是否封鎖裝置碼流程。
 
-### 12.4 右側郵件資訊面板：按類別分區塊（v1.3.0）
+### 12.4 右側郵件資訊面板：按類別分區塊（v1.3.0；v1.3.1 開啟動作移入郵件資訊卡）
 
 右側面板原本是一路往下的欄位文字：郵件資訊與待辦資訊各被接成**一個**多行字串（`寄件者: …`／`時間: …`／`資料夾: …`，待辦則是 `狀態: …`／`象限: …`／`建立時間: …`），三顆動作按鈕散在字串後面。改成「一個問題一張卡」，由上而下：
 
 | 卡片 | 內容 | 收合條件 |
 |---|---|---|
-| 郵件資訊 | 寄件者、時間、資料夾、象限、狀態（狀態以膠囊呈現，不是一句話） | 選中的是待辦而信不在掃描裡時整塊收合 |
+| 郵件資訊 | 寄件者、時間、資料夾、象限、狀態（狀態以膠囊呈現，不是一句話），以及「在 Outlook 開啟」 | 選中的是待辦而信不在掃描裡時整塊收合；沒有信可開或與待辦卡片重複時，開啟動作收起 |
 | 為什麼在這裡 | 命中原因 | 沒有原因時整塊收合（`SetReasonBlockVisible`） |
 | 有關的信 | 同一主旨串的其他信，排序與郵件清單共用同一組設定 | 主題只有一封信時收合（`related.Count <= 1`），且只在有選中待辦時才有 |
 | 待回待辦 | 狀態、到期、建立時間、更新時間、備註、處理狀態 | 選中的是純郵件時整塊收合 |
-| 操作 | 手動改象限、加入待辦、AI 說明、在 Outlook 開啟 | 依選取內容決定哪一顆可用（純郵件時「在 Outlook 開啟」才出現） |
+| 操作 | 手動改象限、加入待辦、AI 說明 | 依選取內容決定哪一顆可用 |
 
 - 區塊建構子＝`DetailBlock(標題, 內容)`；面板整體包在 `ScrollViewer`（`_detailScroll`）裡，卡片比視窗高時才出現捲軸。
 - 值為空的欄位不畫那一列；`_detailMeta` 與待辦的串接字串都已移除，改成左標籤右值各自一列。
 - 動作按鈕由三顆散落的按鈕合成一張「操作」卡（`BuildActionBlock`）。
 - 新增字串鍵：`detail.section.mail`（郵件資訊）、`detail.section.actions`（操作），三語齊備。
+- 「在 Outlook 開啟」原本長在「操作」卡，v1.3.1 起移入郵件資訊卡（`BuildMailOpenButton`）：卡片顯示哪一封就開哪一封，關聯郵件被點擊後也跟著換到那一封。`UpdateMailOpenButton` 依 `_mailFactsEntryId` 決定可用與否，而當卡片顯示的正是這張待辦自己的來源信（`_detailTodo.SourceEntryId`）時，待辦卡片已經有同一顆按鈕，這顆就收起，不印兩顆做同一件事的按鈕。
 - 這一版的面板程式碼放在新的 partial 檔 `UI/MainWindow.Detail.cs`；`build.ps1` 以萬用字元收源碼，所以不必動建置設定，測試數不變（209）。
 - 面板 harness 進版控（這一節的驗證方式，任何人都能重跑）：`selftest/PanelHarness.cs` 是五次狀態的驅動程式，`selftest/panel/panel.txt` 是各次斷言的字串、`selftest/panel/fixture.txt` 是畫面文字（中文放資料檔，避免 .cs 直寫中文被編譯器用主控台編碼讀壞）；執行 `powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1` 不需參數，會先確認 `dist\OutlookAiHelper.exe` 不比原始碼舊、編譯 harness、跑完五種狀態，最後印出「N/M 條斷言在畫面上」與 exit code，並在 `selftest\` 留下 `panel-out.txt` 與五張 `panel-out-*.png`（輸出檔已列進 `.gitignore`）。
 
