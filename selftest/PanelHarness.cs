@@ -15,9 +15,10 @@
 //     (no keys)           pass 6: each list carries its own order picker - on screen, offering
 //                         every order, opening on the one the settings hold. Read-only on purpose
 //                         (a pick here would save the real settings file), so it also writes
-//                         panel-out-6.png (the mail list) and panel-out-7.png (the follow-up
-//                         list): the whole window with its toolbars, which the panel shots show
-//                         only from inside.
+//                         panel-out-6.png (the mail list), panel-out-7.png (the follow-up list)
+//                         and panel-out-8.png (the narrow window, where the toolbar has to wrap):
+//                         the whole window, toolbars included, which the panel shots show only
+//                         from inside.
 //   Only text that is actually on screen counts: an element inside a collapsed card is in the tree
 //   with a zero size, and used to read as a pass by mistake.
 //
@@ -609,6 +610,34 @@ internal static class PanelHarness
             CaptureWindow(win, pngBase, 6);
         }
 
+        // The wrap claim, measured: at the narrowest window the toolbar is allowed to be, the
+        // button the user came for is still inside it. Where an element sits is what matters - a
+        // control pushed past the edge is still visible as far as WPF is concerned.
+        double width = win.Width;
+        WrapPanel mailBar = Ancestor<WrapPanel>(Field(win, "_scanButton") as DependencyObject);
+        double rowBefore = mailBar == null ? 0 : mailBar.ActualHeight;
+        win.Width = double.IsNaN(win.MinWidth) || win.MinWidth < 100 ? 900 : win.MinWidth;
+        Pump();
+        win.UpdateLayout();
+        double rowAfter = mailBar == null ? 0 : mailBar.ActualHeight;
+        Say(string.Format(CultureInfo.InvariantCulture,
+            "  mail toolbar: {0:0.#} high at {1:0.#} wide -> {2:0.#} high at {3:0.#} wide",
+            rowBefore, width, rowAfter, win.ActualWidth));
+        ok += SortCheck(ref total, "the mail toolbar wraps to a second row when the window is narrow",
+            mailBar != null && rowAfter > rowBefore + 0.5);
+        ok += SortCheck(ref total, "the mail list's order picker stays inside the narrowest window",
+            list != null && Inside(win, list));
+        ok += SortCheck(ref total, "the scan button stays inside the narrowest window",
+            Inside(win, Field(win, "_scanButton") as FrameworkElement));
+        if (pngBase != null)
+        {
+            CaptureWindow(win, pngBase, 8);
+        }
+
+        win.Width = width;
+        Pump();
+        win.UpdateLayout();
+
         Invoke(win, "ShowPage", "todo");
         Pump();
         win.UpdateLayout();
@@ -628,6 +657,16 @@ internal static class PanelHarness
             CaptureWindow(win, pngBase, 7);
         }
 
+        // The follow-up toolbar wraps as well, so its picker stays inside the narrow window too.
+        win.Width = double.IsNaN(win.MinWidth) || win.MinWidth < 100 ? 900 : win.MinWidth;
+        Pump();
+        win.UpdateLayout();
+        ok += SortCheck(ref total, "the follow-up list's order picker stays inside the narrowest window",
+            todo != null && Inside(win, todo));
+        win.Width = width;
+        Pump();
+        win.UpdateLayout();
+
         Say(string.Format(CultureInfo.InvariantCulture, "  sortControls: {0}/{1}", ok, total));
         return ok == total ? 0 : 1;
     }
@@ -638,6 +677,52 @@ internal static class PanelHarness
         total++;
         Say(string.Format(CultureInfo.InvariantCulture, "  sort {0} {1}", held ? "ok  " : "MISS", what));
         return held ? 1 : 0;
+    }
+
+    /// <summary>The nearest ancestor of this type, or null - how a control finds the bar it sits on.</summary>
+    private static T Ancestor<T>(DependencyObject node) where T : DependencyObject
+    {
+        if (node == null)
+        {
+            return null;
+        }
+
+        for (DependencyObject parent = VisualTreeHelper.GetParent(node); parent != null;
+            parent = VisualTreeHelper.GetParent(parent))
+        {
+            T hit = parent as T;
+            if (hit != null)
+            {
+                return hit;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// True when the element is on screen and wholly inside the window. A toolbar that wraps
+    /// keeps its controls inside; one that runs past the edge leaves them present but out of
+    /// view, and present is what a plain visibility check would call a pass.
+    /// </summary>
+    private static bool Inside(Window win, FrameworkElement fe)
+    {
+        if (fe == null || !OnScreen(fe))
+        {
+            return false;
+        }
+
+        try
+        {
+            Point corner = fe.TransformToAncestor(win).Transform(new Point(0, 0));
+            return corner.X >= -0.5 && corner.Y >= -0.5 &&
+                corner.X + fe.ActualWidth <= win.ActualWidth + 0.5 &&
+                corner.Y + fe.ActualHeight <= win.ActualHeight + 0.5;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     /// <summary>The picker's items must be exactly these labels, in this order.</summary>
