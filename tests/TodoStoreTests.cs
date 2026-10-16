@@ -205,8 +205,9 @@ namespace OutlookAiHelper.Tests
                     && TodoOrdering.QuadrantRank(Strings.QuadrantName(Quadrant.Q4Neither)) == 3
                     && TodoOrdering.QuadrantRank("something else") == TodoOrdering.UnknownQuadrantRank
                     && TodoOrdering.ParseMode("quadrant") == TodoSortMode.Quadrant
-                    && TodoOrdering.ParseMode(null) == TodoSortMode.Manual
-                    && TodoOrdering.ParseMode("nonsense") == TodoSortMode.Manual;
+                    && TodoOrdering.ParseMode(null) == TodoOrdering.DefaultMode
+                    && TodoOrdering.ParseMode("nonsense") == TodoOrdering.DefaultMode
+                    && TodoOrdering.ParseMode("newestfirst") == TodoSortMode.NewestFirst;
             });
 
             failed += Check("sorting by due date keeps undated items off the top", () =>

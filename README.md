@@ -80,7 +80,7 @@ selftest/                   右側面板 harness：在行程內開真視窗、�
 dist\OutlookAiHelper.Tests.exe
 ```
 
-涵蓋：分類規則、待辦儲存、設定隱私與毀損隔離、掃描範圍（刪除的郵件排除）、更新版本比較與更新安全政策 / Release 解析。目前 209 項全部通過。
+涵蓋：分類規則、待辦儲存、設定隱私與毀損隔離、掃描範圍（刪除的郵件排除）、更新版本比較與更新安全政策 / Release 解析。目前 221 項全部通過。
 
 右側面板另外有一條 harness。面板在點選前是收合的，而合成點擊需要視窗在前景——無人桌面給不了，所以它改成在行程內開同一個視窗、直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail` / `OnRelatedMailClick`），再把畫面上真正看得見的文字讀回來。跑之前先 `build.ps1` 產生 `dist\OutlookAiHelper.exe`：
 

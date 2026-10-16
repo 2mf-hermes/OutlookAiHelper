@@ -67,6 +67,10 @@ namespace OutlookAiHelper.Adapters.Storage
         [DataMember(Order = 16)]
         public string MailSort { get; set; }
 
+        /// <summary>The follow-up ordering by name; absent from files written before it existed.</summary>
+        [DataMember(Order = 20)]
+        public string TodoSort { get; set; }
+
         /// <summary>
         /// The mail sources the user added. Absent from a file written before them, which
         /// reads back as an empty list and resolves to local Outlook.
@@ -182,6 +186,7 @@ namespace OutlookAiHelper.Adapters.Storage
                         CheckForUpdatesOnStartup = doc.CheckForUpdatesOnStartup,
                         AutoRefreshMinutes = NormalizeAutoRefreshMinutes(doc.AutoRefreshMinutes),
                         MailSort = string.IsNullOrEmpty(doc.MailSort) ? AppSettings.DefaultMailSort : doc.MailSort,
+                        TodoSort = string.IsNullOrEmpty(doc.TodoSort) ? AppSettings.DefaultTodoSort : doc.TodoSort,
                         MailSources = FromSourceRecords(doc.MailSources),
                         ActiveMailSourceId = doc.ActiveMailSourceId ?? string.Empty,
                         SourceChoiceAsked = doc.SourceChoiceAsked
@@ -221,6 +226,7 @@ namespace OutlookAiHelper.Adapters.Storage
                 CheckForUpdatesOnStartup = settings.CheckForUpdatesOnStartup,
                 AutoRefreshMinutes = NormalizeAutoRefreshMinutes(settings.AutoRefreshMinutes),
                 MailSort = string.IsNullOrEmpty(settings.MailSort) ? AppSettings.DefaultMailSort : settings.MailSort,
+                TodoSort = string.IsNullOrEmpty(settings.TodoSort) ? AppSettings.DefaultTodoSort : settings.TodoSort,
                 MailSources = ToSourceRecords(settings.MailSources),
                 ActiveMailSourceId = settings.ActiveMailSourceId ?? string.Empty,
                 SourceChoiceAsked = settings.SourceChoiceAsked

@@ -722,3 +722,36 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - 面板 harness 進版控（這一節的驗證方式，任何人都能重跑）：`selftest/PanelHarness.cs` 是五次狀態的驅動程式，`selftest/panel/panel.txt` 是各次斷言的字串、`selftest/panel/fixture.txt` 是畫面文字（中文放資料檔，避免 .cs 直寫中文被編譯器用主控台編碼讀壞）；執行 `powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1` 不需參數，會先確認 `dist\OutlookAiHelper.exe` 不比原始碼舊、編譯 harness、跑完五種狀態，最後印出「N/M 條斷言在畫面上」與 exit code，並在 `selftest\` 留下 `panel-out.txt` 與五張 `panel-out-*.png`（輸出檔已列進 `.gitignore`）。
 
 **驗證方式**：右側面板在沒有點選前列是收合的，而合成點擊需要前景——無人桌面給不了，所以那一條 smoke 檢查一直是 SKIP。改用**同處理序**（in-process）harness：把視窗開在同一個處理序裡，直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail` / `OnRelatedMailClick`），再走視覺樹讀回畫面上真正看得見的文字。五種狀態共 72 條斷言：待辦選取且信在掃描內、待辦選取但信不在掃描內、從郵件清單點一列（沒有待辦）、待辦的主題只有自己一封信（主題卡必須收合而不是空著）、待辦的主題中的另一封信被點擊（郵件資訊卡的那個開啟動作必須跟著換到那一封，harness 另外直接檢查它指向的那個 entry id）。
+
+### 12.5 兩種清單的排序區塊、待回待辦的同主題整合（未發行）
+
+排序引擎其實早就有了（`Application/MailOrdering.cs`、`Core/Models/TodoOrdering.cs`，各五種模式），郵件清單也一直都是「時間降序」——問題是使用者看不到也改不到：郵件清單的排序只長在設定頁，改完要按「儲存」才生效；待回待辦雖然有排序下拉，卻在工具列最左邊，而且每次重開都回到預設。這一版把排序搬到清單自己身上：
+
+| 位置 | 控制項 | 預設 | 是否記住 |
+|---|---|---|---|
+| 郵件清單工具列（開始掃描／取消右側） | 排序下拉，自成一個 glass 群組 | 最新在上 | 是（`AppSettings.MailSort`，與設定頁共用同一個設定） |
+| 待回待辦工具列（「全部」右側、新增待辦下方） | 排序下拉，自成一個 glass 群組 | 最新優先 | 是（`AppSettings.TodoSort`，這一版新增） |
+
+- 兩個下拉各是一個 `UiKit.ToolGroup`（玻璃膠囊），與掃描群組、天數群組並排；郵件清單工具列改成**會換行**，視窗縮窄或右側面板打開時不再把「開始掃描」擠掉，也不再被裁掉。
+- 待回待辦新增 `TodoSortMode.NewestFirst`（最新優先），`TodoOrdering.DefaultMode` 由「加入順序」改成它——所以「預設以最新時間降序」是預設值真的變了，不是只把下拉選到某個位置。舊設定檔沒有這個鍵時讀回 `AppSettings.DefaultTodoSort`，向後相容。
+- 改排序就立刻重畫（郵件清單與其右側的相關郵件、待回待辦清單都一樣），不必重新掃描，也不必按儲存。
+
+**同主題整合**（待回待辦）：`Application/TodoTopics.cs`
+
+| 欄位 | 內容 |
+|---|---|
+| 主題的認定 | `MailThreads.KeyOfSubject`（去掉 RE:/FW: 這類回覆前綴，忽略大小寫與多餘空白）——**與郵件清單共用同一條規則**，所以「同一主題」在兩頁指的是同一件事，不是兩套定義 |
+| 誰當代表 | 使用者選的排序中排最前面的那一項（`Lead`）；主題在清單裡的位置也由它決定，主題內的順序就是清單的順序 |
+| 主題列 | 代表那列 ＋ 一條細線：「同主題 N 項」與「展開／收合」；展開後其餘成員各自成列並縮排，勾選、刪除、點擊預覽的行為與一般列相同 |
+| 不整合的情形 | 標題無法構成主題（空白、只有一個字）→ 永遠自己一列；**只有一項的主題不算主題**（`IsTopic` ＝ 有鍵且成員 > 1），所以一般待辦不會長出「同主題 1 項」和一個沒東西可展開的按鈕 |
+| 已完成與未完成 | 同一主旨的已完成與未完成共用一個鍵（一個主題被回掉了不代表要換一個主題），統計時才分開數 |
+| 整合不改變資料 | 摺疊只在畫面上發生，不動待辦本身，也不動已存的來源信 entry id |
+
+**小結行**（看數字就知道現在是什麼狀態）：
+
+- 郵件清單下方：`共 {0} 封 · {1} 個主旨串 · {2} 封已加入待辦`（`mail.list.summary`）後面再接一段「· 排序：{0}」（`mail.list.order`，由 `MailOrdering.LabelKey` 取當前排序的名字）。
+- 待回待辦下方：`共 {0} 項 · {1} 個同主題`（`todo.list.summary`），只算真的整合起來的主題，不會把單獨一項算成一個群組。
+
+- 新字串鍵（三語齊備）：`todo.sort.newest`（最新優先）、`todo.topic.count`（同主題 {0} 項）、`todo.topic.more`／`todo.topic.less`（展開／收合）、`todo.list.summary`、`mail.list.order`。
+
+**驗證方式**：`Application/TodoTopics.cs` 不碰 WPF，所以整合規則可以直接量：`tests/TodoTopicTests.cs` 十二條（同主題成一列、不同主題各一列、大小寫與空白不拆、只有一項不算主題、無法構成主題者永遠單獨、主導順序由使用者選的排序決定、已完成仍屬於它的主題且不被算成未完成、整合不增不減、統計只算真的整合、空清單不炸），註冊在 `tests/TestRunner.cs`，測試數 209 → 221。畫面仍由面板 harness 量：`selftest/run_panel.ps1` 五種狀態 72/72、exit 0。

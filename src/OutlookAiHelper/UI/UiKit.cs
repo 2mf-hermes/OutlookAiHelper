@@ -306,10 +306,14 @@ namespace OutlookAiHelper.UI
             return GlassPlate(panel, RadiusControl, new Thickness(8, 6, 8, 6), false);
         }
 
-        /// <summary>Toolbar bar containing grouped glass capsules with spacing between groups.</summary>
+        /// <summary>
+        /// Toolbar bar containing grouped glass capsules with spacing between groups. The bar
+        /// wraps, because at the window's narrowest the groups no longer fit side by side and a
+        /// line that wrapped is readable where one that ran past the edge is not.
+        /// </summary>
         public static Border ToolbarGroups(params Border[] groups)
         {
-            var bar = new StackPanel
+            var bar = new WrapPanel
             {
                 Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center

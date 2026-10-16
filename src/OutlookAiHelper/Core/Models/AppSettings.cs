@@ -22,6 +22,12 @@ namespace OutlookAiHelper.Core.Models
         /// </summary>
         public const string DefaultMailSort = "NewestFirst";
 
+        /// <summary>
+        /// Name of the default follow-up ordering, stored as text for the same reason as the
+        /// mail one: an unknown name reads back as this rather than breaking the list.
+        /// </summary>
+        public const string DefaultTodoSort = "NewestFirst";
+
         public AppSettings()
         {
             SchemaVersion = 1;
@@ -29,6 +35,7 @@ namespace OutlookAiHelper.Core.Models
             ScanDays = 30;
             AutoRefreshMinutes = DefaultAutoRefreshMinutes;
             MailSort = DefaultMailSort;
+            TodoSort = DefaultTodoSort;
             FolderPath = "Inbox";
             VipAddresses = new List<string>();
             UrgentKeywords = new List<string>();
@@ -77,6 +84,13 @@ namespace OutlookAiHelper.Core.Models
         /// show the same mails, so two settings could only ever disagree.
         /// </summary>
         public string MailSort { get; set; }
+
+        /// <summary>
+        /// How the follow-up list is ordered, stored by name (see TodoOrdering). The follow-up
+        /// page has its own sort control and writes here the moment the user picks, so the
+        /// choice outlives the run the way the mail sort does.
+        /// </summary>
+        public string TodoSort { get; set; }
 
         /// <summary>
         /// The mail sources the user has added. Empty is the normal state of a fresh

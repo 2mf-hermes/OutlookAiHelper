@@ -68,6 +68,7 @@ namespace OutlookAiHelper.UI
         private StackPanel _reasonBlock;
         private TextBlock _statusText;
         private TextBlock _todoEmpty;
+        private TextBlock _todoSummary;
         private ProgressBar _progress;
         private Button _scanButton;
         private Button _cancelButton;
@@ -119,6 +120,19 @@ namespace OutlookAiHelper.UI
         private HashSet<string> _todoEntryIds = new HashSet<string>(StringComparer.Ordinal);
         private readonly HashSet<string> _expandedThreads = new HashSet<string>(StringComparer.Ordinal);
         private TextBlock _listSummary;
+        private ComboBox _listSortBox;
+
+        /// <summary>
+        /// True once the page is built. A picker being pointed at the stored setting raises
+        /// SelectionChanged while it is set, and that must not read as the user choosing.
+        /// </summary>
+        private bool _sortUiReady;
+
+        /// <summary>
+        /// Topics of the follow-up list the user has opened. Kept beside the list rather than
+        /// in the fold, so a topic stays open across the rebinds every status change causes.
+        /// </summary>
+        private readonly HashSet<string> _expandedTodoTopics = new HashSet<string>(StringComparer.Ordinal);
         // Set when the follow-up list changes; the mail list rebinds from it next time it is
         // shown, so a mail the user adds to the follow-ups gains its 已加入待辦 tag at once.
         private bool _mailBadgeStale = true;
@@ -166,6 +180,7 @@ namespace OutlookAiHelper.UI
             EnsureAiProviders();
             Content = BuildChrome();
             ApplySettingsToToolbar();
+            _sortUiReady = true;
             RefreshAiProviderCombo();
             ShowEmpty();
             ShowPage("quadrants");
@@ -628,7 +643,16 @@ namespace OutlookAiHelper.UI
             _cancelButton.MinWidth = 96;
             _cancelButton.IsEnabled = false;
 
-            header.Children.Add(UiKit.ToolbarGroups(daysGroup, actionGroup));
+            var sortLabel = UiKit.Caption(Strings.T("mail.sort"));
+            sortLabel.VerticalAlignment = VerticalAlignment.Center;
+            sortLabel.Margin = new Thickness(2, 0, 8, 0);
+            var sortGroup = UiKit.ToolGroup(
+                sortLabel,
+                UiKit.FieldChrome((_listSortBox = BuildListSortPicker())));
+
+            // The sort block sits to the right of scan/cancel, on the list it orders: changing
+            // the order used to mean a trip to the settings page and a save.
+            header.Children.Add(UiKit.ToolbarGroups(daysGroup, actionGroup, sortGroup));
             grid.Children.Add(header);
             Grid.SetRow(header, 0);
 
@@ -701,6 +725,92 @@ namespace OutlookAiHelper.UI
             var factory = new FrameworkElementFactory(typeof(StackPanel));
             factory.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
             list.ItemsPanel = new ItemsPanelTemplate(factory);
+        }
+
+        /// <summary>
+        /// The mail list's own sort control. It offers the orderings the settings page offers,
+        /// but sits on the list it orders, so a change takes effect there and then and is
+        /// remembered without a save step.
+        /// </summary>
+        private ComboBox BuildListSortPicker()
+        {
+            var box = UiKit.Select();
+            WithName(box, Strings.T("mail.sort"));
+            box.Width = 150;
+            box.ToolTip = Strings.T("mail.sort.help");
+            foreach (var mode in MailOrdering.Modes)
+            {
+                box.Items.Add(Strings.T(MailOrdering.LabelKey(mode)));
+            }
+
+            box.SelectedIndex = MailSortChoiceIndex(CurrentMailSort());
+            box.SelectionChanged += (s, e) => OnMailSortPicked();
+            return box;
+        }
+
+        /// <summary>
+        /// A sort picked on the mail list takes effect at once and is remembered, so the list
+        /// opens the way it was left. The settings page's own picker is brought into line so the
+        /// two can never disagree, and the related mails beside an open follow-up follow along
+        /// because they read the same setting.
+        /// </summary>
+        private void OnMailSortPicked()
+        {
+            if (!_sortUiReady || _listSortBox == null || _settings == null)
+            {
+                return;
+            }
+
+            var index = _listSortBox.SelectedIndex;
+            if (index < 0 || index >= MailOrdering.Modes.Length)
+            {
+                return;
+            }
+
+            var mode = MailOrdering.Modes[index];
+            if (string.Equals(_settings.MailSort, mode.ToString(), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _settings.MailSort = mode.ToString();
+            _settingsStore.Save(_settings);
+            SyncSortControls();
+            ApplyMailOrdering();
+        }
+
+        /// <summary>
+        /// Points the sort controls at the stored setting without letting that count as a
+        /// choice. Assigning a picker's index raises SelectionChanged, and a control being shown
+        /// what the setting already says must not write the setting back.
+        /// </summary>
+        private void SyncSortControls()
+        {
+            var ready = _sortUiReady;
+            _sortUiReady = false;
+            try
+            {
+                var index = MailSortChoiceIndex(CurrentMailSort());
+                if (_mailSortBox != null)
+                {
+                    _mailSortBox.SelectedIndex = index;
+                }
+
+                if (_listSortBox != null)
+                {
+                    _listSortBox.SelectedIndex = index;
+                }
+
+                if (_todoSortPicker != null)
+                {
+                    _todoSortMode = CurrentTodoSort();
+                    _todoSortPicker.SelectedIndex = SortModeToIndex(_todoSortMode);
+                }
+            }
+            finally
+            {
+                _sortUiReady = ready;
+            }
         }
 
         private Panel BuildListPanel()
@@ -940,7 +1050,28 @@ namespace OutlookAiHelper.UI
             };
             body.Children.Add(_todoList);
             body.Children.Add(_todoEmpty);
-            grid.Children.Add(UiKit.Panel(body));
+
+            // The follow-up page's own tally line: how many follow-ups are on the page and how
+            // rows the same-subject fold saved. Collapsed until there is something to count.
+            _todoSummary = new TextBlock
+            {
+                FontSize = UiKit.TypeFootnote,
+                FontWeight = FontWeights.Medium,
+                Foreground = Theme.MutedBrush,
+                Margin = new Thickness(2, 8, 2, 2),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Visibility = Visibility.Collapsed
+            };
+
+            var stack = new Grid();
+            stack.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            stack.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var panel = UiKit.Panel(body);
+            Grid.SetRow(panel, 0);
+            Grid.SetRow(_todoSummary, 1);
+            stack.Children.Add(panel);
+            stack.Children.Add(_todoSummary);
+            grid.Children.Add(stack);
             Grid.SetRow(grid.Children[grid.Children.Count - 1], 2);
             return grid;
         }
@@ -1693,18 +1824,66 @@ namespace OutlookAiHelper.UI
             // is testable without Outlook or a window; Manual is the stored order.
             var items = TodoOrdering.Sort(filtered, _todoSortMode, DateTime.UtcNow);
 
-            foreach (var item in items)
+            // Follow-ups about one subject fold into a single row, keyed by the very rule the
+            // mail list folds mail with, so the two pages agree on what belongs together. The
+            // fold runs after the sort, so the order the user picked still decides where a topic
+            // sits and in what order its members are listed inside it.
+            var rows = TodoTopics.Group(items, key => _expandedTodoTopics.Contains(key));
+            foreach (var row in rows)
             {
-                _todoList.Items.Add(BuildTodoRow(item));
+                if (!row.IsTopic)
+                {
+                    _todoList.Items.Add(BuildTodoRow(row.Lead));
+                    continue;
+                }
+
+                _todoList.Items.Add(BuildTodoTopicRow(row));
+                if (!row.Expanded)
+                {
+                    continue;
+                }
+
+                // The open topic shows the rest of its follow-ups, each a row of its own so
+                // its box, its delete and its click still do exactly what they always did.
+                foreach (var member in row.Items)
+                {
+                    if (member == row.Lead)
+                    {
+                        continue;
+                    }
+
+                    var nested = (FrameworkElement)BuildTodoRow(member);
+                    nested.Margin = new Thickness(28, 0, 0, 0);
+                    _todoList.Items.Add(nested);
+                }
             }
 
-            var empty = items.Count == 0;
+            var empty = rows.Count == 0;
+            UpdateTodoSummary(TodoTopics.Summarize(rows));
             _todoEmpty.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
             _todoList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
             // The follow-up list just changed, so the 已加入待辦 tags in the mail list are now
             // out of date; it re-draws itself the next time that page is shown.
             _mailBadgeStale = true;
             UpdateTodoBadge();
+        }
+
+        /// <summary>
+        /// The line under the follow-up list. It counts the rows the page is showing, so it can
+        /// never disagree with them, and it names how many topics the fold saved.
+        /// </summary>
+        private void UpdateTodoSummary(TodoTopicStats stats)
+        {
+            if (_todoSummary == null)
+            {
+                return;
+            }
+
+            var text = string.Format(Strings.T("todo.list.summary"), stats.Items, stats.Topics);
+            _todoSummary.Text = text;
+            _todoSummary.Visibility = stats.Items > 0 ? Visibility.Visible : Visibility.Collapsed;
+            // Someone reading the count alone, without the rows, still gets the shape of the list.
+            AutomationProperties.SetName(_todoSummary, text);
         }
 
         private UIElement BuildTodoRow(TodoItem item)
@@ -1825,6 +2004,64 @@ namespace OutlookAiHelper.UI
                 ShowTodoDetail(item);
             };
             return grid;
+        }
+
+        /// <summary>
+        /// A topic: the follow-up the sort ranked highest, carrying a strip that says how many
+        /// follow-ups the topic holds and opens or closes the rest. The container keeps the lead
+        /// follow-up as its tag, so anything that acted on a row still acts on this one.
+        /// </summary>
+        private UIElement BuildTodoTopicRow(TodoTopicRow row)
+        {
+            var container = new Grid { Tag = row.Lead };
+            container.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            container.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var lead = BuildTodoRow(row.Lead);
+            Grid.SetRow(lead, 0);
+            container.Children.Add(lead);
+
+            var strip = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(12, 0, 12, 8)
+            };
+            strip.Children.Add(new TextBlock
+            {
+                Text = string.Format(Strings.T("todo.topic.count"), row.Items.Count),
+                FontSize = UiKit.TypeCaption,
+                Foreground = Theme.MutedBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            });
+
+            var toggle = UiKit.Secondary(
+                Strings.T(row.Expanded ? "todo.topic.less" : "todo.topic.more"),
+                (s, e) => OnTodoTopicToggled(row.TopicKey));
+            strip.Children.Add(toggle);
+
+            Grid.SetRow(strip, 1);
+            container.Children.Add(strip);
+            return container;
+        }
+
+        /// <summary>
+        /// Opens or closes a topic. The list is redrawn rather than the row touched, so an open
+        /// topic and the sorted list below it can never disagree.
+        /// </summary>
+        private void OnTodoTopicToggled(string key)
+        {
+            if (string.IsNullOrEmpty(key))
+            {
+                return;
+            }
+
+            if (!_expandedTodoTopics.Remove(key))
+            {
+                _expandedTodoTopics.Add(key);
+            }
+
+            BindTodos();
         }
 
         private void OnAddTodoClick(object sender, RoutedEventArgs e)
@@ -2036,6 +2273,12 @@ namespace OutlookAiHelper.UI
             return MailOrdering.ParseMode(_settings == null ? null : _settings.MailSort);
         }
 
+        /// <summary>The stored follow-up order; unreadable or missing reads as the default.</summary>
+        private TodoSortMode CurrentTodoSort()
+        {
+            return _settings == null ? TodoOrdering.DefaultMode : TodoOrdering.ParseMode(_settings.TodoSort);
+        }
+
         /// <summary>Choice index of a mode in the settings picker (MailOrdering.Modes order).</summary>
         private static int MailSortChoiceIndex(MailSortMode mode)
         {
@@ -2141,6 +2384,9 @@ namespace OutlookAiHelper.UI
             }
 
             var text = string.Format(Strings.T("mail.list.summary"), stats.Mails, stats.Threads, stats.WithTodo);
+            // Which ordering is in force belongs on the same line: the picker above the list is
+            // the only other place it is visible, and a picker is easy to read past.
+            text = text + " " + string.Format(Strings.T("mail.list.order"), Strings.T(MailOrdering.LabelKey(CurrentMailSort())));
             _listSummary.Text = text;
             _listSummary.Visibility = stats.Mails > 0 ? Visibility.Visible : Visibility.Collapsed;
             // Someone reading the count alone, without the rows, still gets the shape of the list.
@@ -3269,10 +3515,7 @@ namespace OutlookAiHelper.UI
             ConfigureAutoRefresh();
             Strings.Language = _settings.ToUiLanguage();
             ApplySettingsToToolbar();
-            if (_mailSortBox != null)
-            {
-                _mailSortBox.SelectedIndex = MailSortChoiceIndex(CurrentMailSort());
-            }
+            SyncSortControls();
 
             ApplyMailOrdering();
             RefreshAiProviderCombo();

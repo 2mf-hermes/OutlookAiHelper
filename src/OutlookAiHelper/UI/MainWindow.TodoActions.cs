@@ -43,7 +43,7 @@ namespace OutlookAiHelper.UI
         /// <summary>Follow-up the detail panel is currently driving (null when it shows a mail).</summary>
         private TodoItem _detailTodo;
 
-        private TodoSortMode _todoSortMode = TodoSortMode.Manual;
+        private TodoSortMode _todoSortMode = TodoOrdering.DefaultMode;
 
         /// <summary>Guards the due picker while the panel resets it to its prompt.</summary>
         private bool _suppressTodoDueUi;
@@ -392,17 +392,21 @@ namespace OutlookAiHelper.UI
             WithName(_todoSortPicker, Strings.T("todo.sort"));
             _todoSortPicker.Width = 160;
             _todoSortPicker.ToolTip = Strings.T("todo.sort");
+            // Newest arrival first leads the list because that is the order the page opens with;
+            // the rest are the orderings it has always offered, in their old order so nothing
+            // moves under a user who knew where they were.
+            _todoSortPicker.Items.Add(Strings.T("todo.sort.newest"));
             _todoSortPicker.Items.Add(Strings.T("todo.sort.manual"));
             _todoSortPicker.Items.Add(Strings.T("todo.sort.waiting"));
             _todoSortPicker.Items.Add(Strings.T("todo.sort.due"));
             _todoSortPicker.Items.Add(Strings.T("todo.sort.quadrant"));
             _todoSortPicker.Items.Add(Strings.T("todo.sort.updated"));
+
+            // The stored order is what the page opens with. Read here rather than at the field,
+            // because the settings are loaded before the page is built.
+            _todoSortMode = TodoOrdering.ParseMode(_settings == null ? null : _settings.TodoSort);
             _todoSortPicker.SelectedIndex = SortModeToIndex(_todoSortMode);
-            _todoSortPicker.SelectionChanged += (s, e) =>
-            {
-                _todoSortMode = IndexToSortMode(_todoSortPicker.SelectedIndex);
-                BindTodos();
-            };
+            _todoSortPicker.SelectionChanged += (s, e) => OnTodoSortPicked();
 
             var clear = UiKit.Secondary(Strings.T("todo.action.clearDone"), (s, e) => OnClearDone());
             clear.Margin = new Thickness(8, 0, 0, 0);
@@ -426,10 +430,14 @@ namespace OutlookAiHelper.UI
                 BindTodos();
             };
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-            row.Children.Add(_todoSortPicker);
+            // The sort block sits after the status menu, where the user asked for it: it used to
+            // lead the row, ahead of the list it orders. The row wraps, so a narrow window drops
+            // the sort block onto its own line instead of squeezing the status menu out.
+            _todoSortPicker.Margin = new Thickness(8, 0, 0, 0);
+            var row = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             row.Children.Add(clear);
             row.Children.Add(_todoFilter);
+            row.Children.Add(_todoSortPicker);
             return row;
         }
 
@@ -437,10 +445,11 @@ namespace OutlookAiHelper.UI
         {
             switch (mode)
             {
-                case TodoSortMode.LongestWaiting: return 1;
-                case TodoSortMode.DueSoonest: return 2;
-                case TodoSortMode.Quadrant: return 3;
-                case TodoSortMode.RecentlyUpdated: return 4;
+                case TodoSortMode.Manual: return 1;
+                case TodoSortMode.LongestWaiting: return 2;
+                case TodoSortMode.DueSoonest: return 3;
+                case TodoSortMode.Quadrant: return 4;
+                case TodoSortMode.RecentlyUpdated: return 5;
                 default: return 0;
             }
         }
@@ -449,12 +458,34 @@ namespace OutlookAiHelper.UI
         {
             switch (index)
             {
-                case 1: return TodoSortMode.LongestWaiting;
-                case 2: return TodoSortMode.DueSoonest;
-                case 3: return TodoSortMode.Quadrant;
-                case 4: return TodoSortMode.RecentlyUpdated;
-                default: return TodoSortMode.Manual;
+                case 1: return TodoSortMode.Manual;
+                case 2: return TodoSortMode.LongestWaiting;
+                case 3: return TodoSortMode.DueSoonest;
+                case 4: return TodoSortMode.Quadrant;
+                case 5: return TodoSortMode.RecentlyUpdated;
+                default: return TodoOrdering.DefaultMode;
             }
+        }
+
+        /// <summary>
+        /// A sort picked on the follow-up page takes effect there and then and is remembered, so
+        /// the page opens the way it was left. It used to reset to the default on every run.
+        /// </summary>
+        private void OnTodoSortPicked()
+        {
+            if (!_sortUiReady || _todoSortPicker == null || _settings == null)
+            {
+                return;
+            }
+
+            _todoSortMode = IndexToSortMode(_todoSortPicker.SelectedIndex);
+            if (!string.Equals(_settings.TodoSort, _todoSortMode.ToString(), StringComparison.Ordinal))
+            {
+                _settings.TodoSort = _todoSortMode.ToString();
+                _settingsStore.Save(_settings);
+            }
+
+            BindTodos();
         }
 
         // ------------------------------------------------------------------ shared labels

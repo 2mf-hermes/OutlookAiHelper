@@ -7,8 +7,9 @@ using OutlookAiHelper.Localization;
 namespace OutlookAiHelper.Core.Models
 {
     /// <summary>
-    /// How the follow-up list is ordered. "Manual" is the stored order (newest first),
-    /// which is what the page has always shown.
+    /// How the follow-up list is ordered. "Manual" is the order the store returned, which is
+    /// the arrival order the page has always shown; NewestFirst says so out loud and is what
+    /// the page opens with.
     /// </summary>
     public enum TodoSortMode
     {
@@ -18,7 +19,13 @@ namespace OutlookAiHelper.Core.Models
         RecentlyUpdated,
 
         /// <summary>Soonest due first; items without a due date come last.</summary>
-        DueSoonest
+        DueSoonest,
+
+        /// <summary>
+        /// Newest arrival first. It is the order the page opens with, so it is also what an
+        /// unrecognised stored preference falls back to.
+        /// </summary>
+        NewestFirst
     }
 
     /// <summary>
@@ -29,6 +36,13 @@ namespace OutlookAiHelper.Core.Models
     {
         /// <summary>Fallback rank for an item whose quadrant hint we cannot resolve.</summary>
         public const int UnknownQuadrantRank = 9;
+
+        /// <summary>
+        /// The order the follow-up list is shown in until the user picks another one, and what
+        /// a stored preference we cannot read falls back to. Newest first is what the page has
+        /// always looked like, so nothing moves for anyone who never touches the control.
+        /// </summary>
+        public const TodoSortMode DefaultMode = TodoSortMode.NewestFirst;
 
         private static readonly Quadrant[] RankedQuadrants =
         {
@@ -42,7 +56,7 @@ namespace OutlookAiHelper.Core.Models
         {
             if (string.IsNullOrEmpty(value))
             {
-                return TodoSortMode.Manual;
+                return DefaultMode;
             }
 
             foreach (TodoSortMode mode in Enum.GetValues(typeof(TodoSortMode)))
@@ -53,7 +67,7 @@ namespace OutlookAiHelper.Core.Models
                 }
             }
 
-            return TodoSortMode.Manual;
+            return DefaultMode;
         }
 
         /// <summary>
@@ -111,6 +125,11 @@ namespace OutlookAiHelper.Core.Models
             IOrderedEnumerable<TodoItem> ordered = list.OrderBy(i => i.Status == TodoStatus.Done);
             switch (mode)
             {
+                case TodoSortMode.NewestFirst:
+                    // Newest arrival first, which is what the stored order already produced;
+                    // naming it lets the page offer it and lets the choice survive a restart.
+                    ordered = ordered.ThenByDescending(i => WaitingSince(i));
+                    break;
                 case TodoSortMode.LongestWaiting:
                     ordered = ordered.ThenBy(i => WaitingSince(i));
                     break;
