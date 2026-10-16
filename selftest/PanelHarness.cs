@@ -12,6 +12,12 @@
 //     expect3= / absent3= pass 3: a mail row is selected from the list, no follow-up behind it
 //     expect4= / absent4= pass 4: a follow-up is selected, its topic holds no other mail
 //     expect5= / absent5= pass 5: a follow-up is selected and one of its related mails is clicked
+//     (no keys)           pass 6: each list carries its own order picker - on screen, offering
+//                         every order, opening on the one the settings hold. Read-only on purpose
+//                         (a pick here would save the real settings file), so it also writes
+//                         panel-out-6.png (the mail list) and panel-out-7.png (the follow-up
+//                         list): the whole window with its toolbars, which the panel shots show
+//                         only from inside.
 //   Only text that is actually on screen counts: an element inside a collapsed card is in the tree
 //   with a zero size, and used to read as a pass by mistake.
 //
@@ -33,6 +39,7 @@ using System.Windows.Threading;
 using OutlookAiHelper.Application;
 using OutlookAiHelper.Core.Classification;
 using OutlookAiHelper.Core.Models;
+using OutlookAiHelper.Localization;
 
 internal static class PanelHarness
 {
@@ -149,6 +156,11 @@ internal static class PanelHarness
             exit |= Pass(win, host, items, todo, "ShowTodoDetail", new ScanResultItem[] { source, reply },
                 "a related mail of the topic is clicked", fx, "expect5", "absent5", 5, outPng,
                 "OnRelatedMailClick", reply);
+
+            // The two lists' own order pickers: on screen, offering every order, opening on the one
+            // the settings hold. Read-only - a pick driven from here would write the user's real
+            // settings file, so what a chosen order does to the rows stays with the ordering tests.
+            exit |= SortControls(win, outPng);
 
             win.Close();
             app.Shutdown();
@@ -551,6 +563,164 @@ internal static class PanelHarness
 
             Say(string.Format(CultureInfo.InvariantCulture, "  png: {0} ({1}x{2}, from {3})",
                 path, (int)Math.Ceiling(w), (int)Math.Ceiling(h), target.GetType().Name));
+        }
+        catch (Exception ex)
+        {
+            Say("  png failed: " + ex.Message);
+        }
+    }
+
+    // ------------------------------------------------------------------ the two order pickers
+
+    /// <summary>
+    /// Each list carries its own order picker now, so the order is changed where the list is
+    /// rather than on the settings page. Read-only on purpose: picking an item programmatically
+    /// runs the window's own handler, and that saves the user's real settings file, so what is
+    /// checked is that each picker is on screen, offers every order it should, and opens on the
+    /// order the settings hold. What a chosen order does to the rows is the ordering tests' job;
+    /// where the block sits is what the whole-window shots show.
+    /// </summary>
+    private static int SortControls(Window win, string pngBase)
+    {
+        Say("");
+        Say("--- pass 6: each list carries its own order picker ---");
+        int ok = 0;
+        int total = 0;
+
+        Invoke(win, "ShowPage", "quadrants");
+        Pump();
+        win.UpdateLayout();
+
+        ComboBox list = Field(win, "_listSortBox") as ComboBox;
+        ok += SortCheck(ref total, "the mail list has its own order picker", list != null);
+        ok += SortCheck(ref total, "the mail list's order picker is on screen and live",
+            list != null && OnScreen(list) && list.IsEnabled);
+        ok += SortCheck(ref total, "the mail list's order picker offers every order, in order",
+            SameItems(list, MailLabels()));
+        string stored = Stored(win, "MailSort");
+        string expected = string.IsNullOrEmpty(stored)
+            ? null
+            : Strings.T(MailOrdering.LabelKey(MailOrdering.ParseMode(stored)));
+        ok += SortCheck(ref total, "the mail list opens on the order the settings hold",
+            expected != null && SelectedIs(list, expected));
+        Say("  " + Describe(win, "_listSortBox"));
+        if (pngBase != null)
+        {
+            CaptureWindow(win, pngBase, 6);
+        }
+
+        Invoke(win, "ShowPage", "todo");
+        Pump();
+        win.UpdateLayout();
+
+        ComboBox todo = Field(win, "_todoSortPicker") as ComboBox;
+        ok += SortCheck(ref total, "the follow-up list has its own order picker", todo != null);
+        ok += SortCheck(ref total, "the follow-up list's order picker is on screen and live",
+            todo != null && OnScreen(todo) && todo.IsEnabled);
+        ok += SortCheck(ref total, "the follow-up list's order picker offers the newest order first",
+            todo != null && todo.Items.Count > 1 &&
+            string.Equals(ItemText(todo, 0), Strings.T("todo.sort.newest"), StringComparison.Ordinal));
+        ok += SortCheck(ref total, "the follow-up list opens on one of the orders it offers",
+            todo != null && todo.SelectedIndex >= 0 && todo.SelectedIndex < todo.Items.Count);
+        Say("  " + Describe(win, "_todoSortPicker"));
+        if (pngBase != null)
+        {
+            CaptureWindow(win, pngBase, 7);
+        }
+
+        Say(string.Format(CultureInfo.InvariantCulture, "  sortControls: {0}/{1}", ok, total));
+        return ok == total ? 0 : 1;
+    }
+
+    /// <summary>Says one check's outcome; returns 1 when it held, so the caller can total it up.</summary>
+    private static int SortCheck(ref int total, string what, bool held)
+    {
+        total++;
+        Say(string.Format(CultureInfo.InvariantCulture, "  sort {0} {1}", held ? "ok  " : "MISS", what));
+        return held ? 1 : 0;
+    }
+
+    /// <summary>The picker's items must be exactly these labels, in this order.</summary>
+    private static bool SameItems(ComboBox box, string[] labels)
+    {
+        if (box == null || box.Items.Count != labels.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < labels.Length; i++)
+        {
+            if (!string.Equals(ItemText(box, i), labels[i], StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Every order the mail list offers, said the way its picker says it.</summary>
+    private static string[] MailLabels()
+    {
+        var labels = new string[MailOrdering.Modes.Length];
+        for (int i = 0; i < MailOrdering.Modes.Length; i++)
+        {
+            labels[i] = Strings.T(MailOrdering.LabelKey(MailOrdering.Modes[i]));
+        }
+
+        return labels;
+    }
+
+    private static string ItemText(ComboBox box, int index)
+    {
+        if (box == null || index < 0 || index >= box.Items.Count)
+        {
+            return null;
+        }
+
+        object item = box.Items[index];
+        return item == null ? null : item.ToString();
+    }
+
+    private static bool SelectedIs(ComboBox box, string label)
+    {
+        return box != null && box.SelectedIndex >= 0 &&
+            string.Equals(ItemText(box, box.SelectedIndex), label, StringComparison.Ordinal);
+    }
+
+    /// <summary>A settings string the window holds, e.g. the order it has stored for the mail list.</summary>
+    private static string Stored(Window win, string name)
+    {
+        object settings = Field(win, "_settings");
+        if (settings == null)
+        {
+            return null;
+        }
+
+        PropertyInfo p = settings.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
+        return p == null ? null : p.GetValue(settings, null) as string;
+    }
+
+    /// <summary>Whole window, toolbars included: the panel shots never show where a control sits.</summary>
+    private static void CaptureWindow(Window win, string baseName, int index)
+    {
+        try
+        {
+            int w = (int)Math.Ceiling(win.ActualWidth);
+            int h = (int)Math.Ceiling(win.ActualHeight);
+            var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(win);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(rtb));
+            string path = Path.Combine(Path.GetDirectoryName(baseName),
+                Path.GetFileNameWithoutExtension(baseName) + "-" + index + Path.GetExtension(baseName));
+            using (FileStream fs = File.Create(path))
+            {
+                encoder.Save(fs);
+            }
+
+            Say(string.Format(CultureInfo.InvariantCulture, "  png: {0} ({1}x{2}, the whole window)",
+                path, w, h));
         }
         catch (Exception ex)
         {

@@ -71,7 +71,7 @@ src/OutlookAiHelper/
   UI/                        MainWindow、UiKit、Theme、UpdateSheet
   Localization/Strings.cs    繁中／簡中／英文
 tests/                       建置後執行、無框架的測試（規則、儲存、掃描範圍、更新）
-selftest/                   右側面板 harness：在行程內開真視窗、呼叫視窗自己的選取處理常式，跑五種狀態（72 條斷言）
+selftest/                   右側面板 harness：在行程內開真視窗、呼叫視窗自己的選取處理常式，跑六種狀態（80 條斷言）
 ```
 
 ## 測試
@@ -88,7 +88,7 @@ dist\OutlookAiHelper.Tests.exe
 powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1
 ```
 
-它會跑五種狀態共 72 條斷言，印出「N/M 條斷言在畫面上」與 exit code，並把 `panel-out.txt` 與五張 `panel-out-*.png` 留在 `selftest\`（皆列在 `.gitignore`）。
+它會跑六種狀態共 80 條斷言，印出「N/M 條斷言在畫面上」與 exit code，並把 `panel-out.txt` 與七張 `panel-out-*.png` 留在 `selftest\`（皆列在 `.gitignore`）。第六種狀態另外確認兩個清單各自的排序下拉都在畫面上、選項與程式宣告的一致、且開在設定記住的那個排序。
 
 ## 授權
 

@@ -719,13 +719,13 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - 新增字串鍵：`detail.section.mail`（郵件資訊）、`detail.section.actions`（操作），三語齊備。
 - 「在 Outlook 開啟」原本長在「操作」卡，v1.3.1 起移入郵件資訊卡（`BuildMailOpenButton`）：卡片顯示哪一封就開哪一封，關聯郵件被點擊後也跟著換到那一封。`UpdateMailOpenButton` 依 `_mailFactsEntryId` 決定可用與否，而當卡片顯示的正是這張待辦自己的來源信（`_detailTodo.SourceEntryId`）時，待辦卡片已經有同一顆按鈕，這顆就收起，不印兩顆做同一件事的按鈕。
 - 這一版的面板程式碼放在新的 partial 檔 `UI/MainWindow.Detail.cs`；`build.ps1` 以萬用字元收源碼，所以不必動建置設定，測試數不變（209）。
-- 面板 harness 進版控（這一節的驗證方式，任何人都能重跑）：`selftest/PanelHarness.cs` 是五次狀態的驅動程式，`selftest/panel/panel.txt` 是各次斷言的字串、`selftest/panel/fixture.txt` 是畫面文字（中文放資料檔，避免 .cs 直寫中文被編譯器用主控台編碼讀壞）；執行 `powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1` 不需參數，會先確認 `dist\OutlookAiHelper.exe` 不比原始碼舊、編譯 harness、跑完五種狀態，最後印出「N/M 條斷言在畫面上」與 exit code，並在 `selftest\` 留下 `panel-out.txt` 與五張 `panel-out-*.png`（輸出檔已列進 `.gitignore`）。
+- 面板 harness 進版控（這一節的驗證方式，任何人都能重跑）：`selftest/PanelHarness.cs` 是六次狀態的驅動程式，`selftest/panel/panel.txt` 是各次斷言的字串、`selftest/panel/fixture.txt` 是畫面文字（中文放資料檔，避免 .cs 直寫中文被編譯器用主控台編碼讀壞）；執行 `powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1` 不需參數，會先確認 `dist\OutlookAiHelper.exe` 不比原始碼舊、編譯 harness、跑完六種狀態，最後印出「N/M 條斷言在畫面上」與 exit code，並在 `selftest\` 留下 `panel-out.txt` 與七張 `panel-out-*.png`（輸出檔已列進 `.gitignore`）。
 
-**驗證方式**：右側面板在沒有點選前列是收合的，而合成點擊需要前景——無人桌面給不了，所以那一條 smoke 檢查一直是 SKIP。改用**同處理序**（in-process）harness：把視窗開在同一個處理序裡，直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail` / `OnRelatedMailClick`），再走視覺樹讀回畫面上真正看得見的文字。五種狀態共 72 條斷言：待辦選取且信在掃描內、待辦選取但信不在掃描內、從郵件清單點一列（沒有待辦）、待辦的主題只有自己一封信（主題卡必須收合而不是空著）、待辦的主題中的另一封信被點擊（郵件資訊卡的那個開啟動作必須跟著換到那一封，harness 另外直接檢查它指向的那個 entry id）。
+**驗證方式**：右側面板在沒有點選前列是收合的，而合成點擊需要前景——無人桌面給不了，所以那一條 smoke 檢查一直是 SKIP。改用**同處理序**（in-process）harness：把視窗開在同一個處理序裡，直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail` / `OnRelatedMailClick`），再走視覺樹讀回畫面上真正看得見的文字。六種狀態共 80 條斷言：待辦選取且信在掃描內、待辦選取但信不在掃描內、從郵件清單點一列（沒有待辦）、待辦的主題只有自己一封信（主題卡必須收合而不是空著）、待辦的主題中的另一封信被點擊（郵件資訊卡的那個開啟動作必須跟著換到那一封，harness 另外直接檢查它指向的那個 entry id）、第六種檢查兩個清單各自的排序下拉都在畫面上、選項與程式宣告的一致、且開在設定記住的那個排序（只讀：在 harness 裡改下拉會寫到使用者的真實設定檔）。
 
 ### 12.5 兩種清單的排序區塊、待回待辦的同主題整合（未發行）
 
-排序引擎其實早就有了（`Application/MailOrdering.cs`、`Core/Models/TodoOrdering.cs`，各五種模式），郵件清單也一直都是「時間降序」——問題是使用者看不到也改不到：郵件清單的排序只長在設定頁，改完要按「儲存」才生效；待回待辦雖然有排序下拉，卻在工具列最左邊，而且每次重開都回到預設。這一版把排序搬到清單自己身上：
+排序引擎其實早就有了（`Application/MailOrdering.cs` 五種；`Core/Models/TodoOrdering.cs` 這一版補上「最新優先」共六種），郵件清單也一直都是「時間降序」——問題是使用者看不到也改不到：郵件清單的排序只長在設定頁，改完要按「儲存」才生效；待回待辦雖然有排序下拉，卻在工具列最左邊，而且每次重開都回到預設。這一版把排序搬到清單自己身上：
 
 | 位置 | 控制項 | 預設 | 是否記住 |
 |---|---|---|---|
@@ -754,4 +754,4 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 
 - 新字串鍵（三語齊備）：`todo.sort.newest`（最新優先）、`todo.topic.count`（同主題 {0} 項）、`todo.topic.more`／`todo.topic.less`（展開／收合）、`todo.list.summary`、`mail.list.order`。
 
-**驗證方式**：`Application/TodoTopics.cs` 不碰 WPF，所以整合規則可以直接量：`tests/TodoTopicTests.cs` 十二條（同主題成一列、不同主題各一列、大小寫與空白不拆、只有一項不算主題、無法構成主題者永遠單獨、主導順序由使用者選的排序決定、已完成仍屬於它的主題且不被算成未完成、整合不增不減、統計只算真的整合、空清單不炸），註冊在 `tests/TestRunner.cs`，測試數 209 → 221。畫面仍由面板 harness 量：`selftest/run_panel.ps1` 五種狀態 72/72、exit 0。
+**驗證方式**：`Application/TodoTopics.cs` 不碰 WPF，所以整合規則可以直接量：`tests/TodoTopicTests.cs` 十二條（同主題成一列、不同主題各一列、大小寫與空白不拆、只有一項不算主題、無法構成主題者永遠單獨、主導順序由使用者選的排序決定、已完成仍屬於它的主題且不被算成未完成、整合不增不減、統計只算真的整合、空清單不炸），註冊在 `tests/TestRunner.cs`，測試數 209 → 221。畫面仍由面板 harness 量：`selftest/run_panel.ps1` 六種狀態 80/80、exit 0。

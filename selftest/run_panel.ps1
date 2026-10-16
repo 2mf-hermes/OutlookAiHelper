@@ -8,7 +8,7 @@
 # Why in-process: the right-hand panel is a collapsed column until a row is clicked, and a synthetic
 # click needs a window in the foreground, which an unattended machine will not give (the UI
 # Automation smoke test skips its click checks for the same reason). Calling the window's handlers
-# on the UI thread is the one route that renders the panel here. See PanelHarness.cs for the five
+# on the UI thread is the one route that renders the panel here. See PanelHarness.cs for the six
 # passes and selftest\panel\panel.txt for what each one asserts.
 $ErrorActionPreference = 'Stop'
 
