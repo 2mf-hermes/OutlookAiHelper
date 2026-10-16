@@ -118,7 +118,7 @@ namespace OutlookAiHelper.Tests
                 && !UpdateSecurityPolicy.IsAllowedAssetName(string.Empty));
 
             failed += Check("paths embedded in the swap script need no cmd escaping", () =>
-                UpdateSecurityPolicy.IsSafeForUpdaterScript("C:\\Users\\MINFU LIAO\\Desktop\\OutlookAiHelper.exe")
+                UpdateSecurityPolicy.IsSafeForUpdaterScript("C:\\Users\\user\\Desktop\\OutlookAiHelper.exe")
                 && !UpdateSecurityPolicy.IsSafeForUpdaterScript("C:\\temp\\100%\\OutlookAiHelper.exe")
                 && !UpdateSecurityPolicy.IsSafeForUpdaterScript("C:\\temp\\a\"b\\OutlookAiHelper.exe")
                 && !UpdateSecurityPolicy.IsSafeForUpdaterScript(null));
