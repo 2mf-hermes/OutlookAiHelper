@@ -128,6 +128,25 @@ namespace OutlookAiHelper.Application
                 : list.OrderBy(r => r.Head ?? r.Newest, comparer).ToList();
         }
 
+        /// <summary>
+        /// The rows the mail list actually draws, in the one order the user picked.
+        ///
+        /// The mails are ordered before they are folded, and this is the only supported way
+        /// in. The fold reads the order it is given for both where a topic sits and which of
+        /// its mails the row presents, so folding an unsorted list first would leave a topic
+        /// showing whichever mail arrived first and only fix where the row itself sat - the
+        /// older mail a user saw at the top of a topic under newest first.
+        /// </summary>
+        public static List<MailListRow> BuildRows(
+            IEnumerable<ScanResultItem> items,
+            MailSortMode mode,
+            Func<string, bool> hasTodo,
+            Func<string, bool> isExpanded)
+        {
+            var ordered = SortMails(items, mode);
+            return SortRows(MailThreads.Group(ordered, hasTodo, isExpanded), mode);
+        }
+
         public static IComparer<ScanResultItem> ComparerFor(MailSortMode mode)
         {
             return new MailComparer(mode);

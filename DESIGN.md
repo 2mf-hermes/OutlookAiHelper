@@ -755,3 +755,13 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - 新字串鍵（三語齊備）：`todo.sort.newest`（最新優先）、`todo.topic.count`（同主題 {0} 項）、`todo.topic.more`／`todo.topic.less`（展開／收合）、`todo.list.summary`、`mail.list.order`。
 
 **驗證方式**：`Application/TodoTopics.cs` 不碰 WPF，所以整合規則可以直接量：`tests/TodoTopicTests.cs` 十二條（同主題成一列、不同主題各一列、大小寫與空白不拆、只有一項不算主題、無法構成主題者永遠單獨、主導順序由使用者選的排序決定、已完成仍屬於它的主題且不被算成未完成、整合不增不減、統計只算真的整合、空清單不炸），註冊在 `tests/TestRunner.cs`，測試數 209 → 221。畫面仍由面板 harness 量：`selftest/run_panel.ps1` 六種狀態 84/84、exit 0。
+
+### 12.6 清單列的版面、郵件摘要與同主題列的展開圖示（未發行）
+
+- **排序落點（修正）**：`MailThreads` 的折疊沿用呼叫端給的順序，而 `MailOrdering.SortRows` 只決定「列」排在哪，不重排列裡的信；所以列的位置看最新一封、列首卻是原本排第一的那封。`MailOrdering.BuildRows` 現在一律先 `SortMails` 再折疊：時間模式下列首就是最新一封，象限模式仍由分數決定列首。
+- **側欄寬度**：`SidebarWidth` 由 220pt 收成 200pt（欄位宣告與 `UpdatePanelWidths()` 共用同一個常數），清單因此多出 20pt；視窗最小寬度維持 900。
+- **一列的結構**：主旨最多兩行（`TextWrapping=Wrap` 加高度上限）；其下是本機信的開頭（`MailSummary.Preview`，由 `OutlookComMailReader.MapItem` 取 `Body` 前段並壓成單行）；寄件者與時間收成一行。
+- **郵件摘要的界線**：本機 COM 讀信時本來就拿得到 `Body`，所以摘要在本機來源不需要任何新權限；雲端 Graph 這條路只要求 `Mail.ReadBasic`，拿不到內文，因此雲端來源的列沒有摘要——要有的話得把範圍放寬，這一版沒有做。
+- **同主題的展開圖示**：`BuildTodoTopicRow` 的主要信那一列改用 `UiKit.ChevronGlyph`（既有元件），放在「刪除」左側。
+
+**驗證**：`tests/MailOrderingTests.cs` 改寫三條（列首在最新優先下是最新一封、同主題內不把舊信排在新信之上、非時間模式仍由分數決定列首），測試 221 → 223。面板 harness 多一組列斷言：郵件列看得到摘要、主旨可兩行、待辦列看得到摘要、展開圖示在刪除左側（4/4），原有六種狀態仍 84/84、exit 0。

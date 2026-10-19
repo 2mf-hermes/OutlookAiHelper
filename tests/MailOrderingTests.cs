@@ -129,11 +129,12 @@ namespace OutlookAiHelper.Tests
                     && ordered[3].Mail.EntryId == "e1";
             });
 
-            failed += Check("a topic row is placed by the newest mail in it, not the one it shows", () =>
+            failed += Check("a topic leads with its newest mail when the list is newest first", () =>
             {
-                // The row presents e1 (highest ranked) while the topic's newest mail is e3, so
-                // this order is not the same as the incoming order of the rows.
-                var rows = MailThreads.Group(
+                // e1 is the scan's highest-scoring mail and the oldest of the topic; under
+                // newest first the row has to present e3 and the row itself has to sit at e3's
+                // time. This is the reported defect, pinned: the row used to show e1.
+                var rows = MailOrdering.BuildRows(
                     new[]
                     {
                         Mail("e1", "Q3 預算", "Amy", "amy@contoso.com", 0, 90),
@@ -141,19 +142,63 @@ namespace OutlookAiHelper.Tests
                         Mail("e3", "Re: Re: Q3 預算", "Amy", "amy@contoso.com", 60, 20),
                         Mail("e4", "旅遊補助", "Ben", "ben@contoso.com", 30, 50)
                     },
+                    MailSortMode.NewestFirst,
                     null,
                     null);
 
-                if (rows.Count != 2 || rows[0].Head.Mail.EntryId != "e1")
+                return rows.Count == 2
+                    && rows[0].Head.Mail.EntryId == "e3"
+                    && rows[0].Newest.Mail.EntryId == "e3"
+                    && rows[0].Mails[0].Mail.EntryId == "e3"
+                    && rows[1].Head.Mail.EntryId == "e4";
+            });
+
+            failed += Check("inside a topic no mail is listed above a newer one, newest first", () =>
+            {
+                var rows = MailOrdering.BuildRows(
+                    new[]
+                    {
+                        Mail("e1", "Q3 預算", "Amy", "amy@contoso.com", 0),
+                        Mail("e2", "Re: Q3 預算", "Amy", "amy@contoso.com", 30),
+                        Mail("e3", "Re: Re: Q3 預算", "Amy", "amy@contoso.com", 10)
+                    },
+                    MailSortMode.NewestFirst,
+                    null,
+                    null);
+
+                return rows.Count == 1
+                    && rows[0].Mails[0].Mail.EntryId == "e2"
+                    && rows[0].Mails[1].Mail.EntryId == "e3"
+                    && rows[0].Mails[2].Mail.EntryId == "e1";
+            });
+
+            failed += Check("a mode that is not about time still decides which mail a topic presents", () =>
+            {
+                // Quadrant ranks the older Q1 mail above the newer Q3 one, so the row must
+                // present e1 there, while newest first must present e2. Fixing one mode must
+                // not decide the other.
+                var quiet = new ScanResultItem
                 {
-                    return false;
-                }
+                    Mail = Summary("Q3 預算", "Amy", "amy@contoso.com", "e1", 0),
+                    Classification = new ClassificationResult(
+                        "e1", Quadrant.Q1UrgentImportant, 90, 90, new List<ScoreReason>(), false)
+                };
+                var later = new ScanResultItem
+                {
+                    Mail = Summary("Re: Q3 預算", "Amy", "amy@contoso.com", "e2", 60),
+                    Classification = new ClassificationResult(
+                        "e2", Quadrant.Q3ImportantNotUrgent, 20, 80, new List<ScoreReason>(), false)
+                };
 
-                var ordered = MailOrdering.SortRows(rows, MailSortMode.NewestFirst);
+                var byQuadrant = MailOrdering.BuildRows(
+                    new[] { quiet, later }, MailSortMode.Quadrant, null, null);
+                var byNewest = MailOrdering.BuildRows(
+                    new[] { quiet, later }, MailSortMode.NewestFirst, null, null);
 
-                return ordered[0].Head.Mail.EntryId == "e1"
-                    && ordered[0].Newest.Mail.EntryId == "e3"
-                    && ordered[1].Head.Mail.EntryId == "e4";
+                return byQuadrant.Count == 1
+                    && byQuadrant[0].Head.Mail.EntryId == "e1"
+                    && byNewest.Count == 1
+                    && byNewest[0].Head.Mail.EntryId == "e2";
             });
 
             failed += Check("the same mails ordered by quadrant put the urgent ones first", () =>

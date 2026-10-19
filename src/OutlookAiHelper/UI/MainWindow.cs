@@ -257,7 +257,7 @@ namespace OutlookAiHelper.UI
 
             // Glass control layer floats above content
             var layout = new Grid { Margin = new Thickness(18) };
-            _leftCol = new ColumnDefinition { Width = new GridLength(220) };
+            _leftCol = new ColumnDefinition { Width = new GridLength(SidebarWidth) };
             _rightCol = new ColumnDefinition { Width = GridLength.Auto };
             layout.ColumnDefinitions.Add(_leftCol);
             layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -313,7 +313,7 @@ namespace OutlookAiHelper.UI
             if (_leftCol != null)
             {
                 // Keep a slim rail when collapsed so the expand button stays clickable.
-                _leftCol.Width = _sidebarOpen ? new GridLength(220) : new GridLength(0);
+                _leftCol.Width = _sidebarOpen ? new GridLength(SidebarWidth) : new GridLength(0);
             }
 
             if (_rightCol != null && _detailHost != null)
@@ -1886,7 +1886,7 @@ namespace OutlookAiHelper.UI
             AutomationProperties.SetName(_todoSummary, text);
         }
 
-        private UIElement BuildTodoRow(TodoItem item)
+        private UIElement BuildTodoRow(TodoItem item, TodoTopicRow topic = null)
         {
             var now = DateTime.UtcNow;
             // The row the detail panel is showing keeps a soft accent wash.
@@ -1944,9 +1944,14 @@ namespace OutlookAiHelper.UI
             var title = new TextBlock
             {
                 Text = item.Title,
+                FontSize = UiKit.TypeSubhead,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = item.Status == TodoStatus.Done ? Theme.MutedBrush : Theme.InkBrush,
-                TextTrimming = TextTrimming.CharacterEllipsis
+                TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                LineHeight = 18,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                MaxHeight = TwoLineHeight
             };
             if (item.Status == TodoStatus.Done)
             {
@@ -1954,6 +1959,15 @@ namespace OutlookAiHelper.UI
             }
 
             text.Children.Add(title);
+
+            // What the mail actually said, when the local reader could give it: a title on its
+            // own cannot tell two long subjects apart.
+            var preview = BuildPreviewText(PreviewForTodo(item));
+            if (preview != null)
+            {
+                text.Children.Add(preview);
+            }
+
             if (!string.IsNullOrEmpty(item.SourceEntryId))
             {
                 text.Children.Add(new TextBlock
@@ -1989,8 +2003,40 @@ namespace OutlookAiHelper.UI
             });
             del.Margin = new Thickness(0, 0, 12, 0);
             del.MinWidth = 72;
-            Grid.SetColumn(del, 2);
-            grid.Children.Add(del);
+
+            // The topic's open/close control is an icon, placed left of the delete button so
+            // the two read as the row's own actions: fold the topic, then remove the follow-up.
+            var actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            if (topic != null)
+            {
+                var chevron = new Button
+                {
+                    Content = UiKit.ChevronGlyph(topic.Expanded, 12),
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(0),
+                    Width = 30,
+                    Height = 30,
+                    Margin = new Thickness(0, 0, 6, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Cursor = Cursors.Hand,
+                    ToolTip = Strings.T(topic.Expanded ? "todo.topic.less" : "todo.topic.more")
+                };
+                AutomationProperties.SetName(
+                    chevron,
+                    Strings.T(topic.Expanded ? "todo.topic.less" : "todo.topic.more"));
+                chevron.Click += (s, e) => OnTodoTopicToggled(topic.TopicKey);
+                actions.Children.Add(chevron);
+            }
+
+            actions.Children.Add(del);
+            Grid.SetColumn(actions, 2);
+            grid.Children.Add(actions);
 
             // Clicking the row itself (not its check box or delete button) previews the
             // mail behind the follow-up in the right-hand panel.
@@ -2007,9 +2053,10 @@ namespace OutlookAiHelper.UI
         }
 
         /// <summary>
-        /// A topic: the follow-up the sort ranked highest, carrying a strip that says how many
-        /// follow-ups the topic holds and opens or closes the rest. The container keeps the lead
-        /// follow-up as its tag, so anything that acted on a row still acts on this one.
+        /// A topic: the follow-up the sort ranked highest, with an open/close chevron beside its
+        /// delete button and a line underneath saying how many follow-ups it holds. The
+        /// container keeps the lead follow-up as its tag, so anything that acted on a row still
+        /// acts on this one.
         /// </summary>
         private UIElement BuildTodoTopicRow(TodoTopicRow row)
         {
@@ -2017,7 +2064,7 @@ namespace OutlookAiHelper.UI
             container.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             container.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var lead = BuildTodoRow(row.Lead);
+            var lead = BuildTodoRow(row.Lead, row);
             Grid.SetRow(lead, 0);
             container.Children.Add(lead);
 
@@ -2034,11 +2081,6 @@ namespace OutlookAiHelper.UI
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 8, 0)
             });
-
-            var toggle = UiKit.Secondary(
-                Strings.T(row.Expanded ? "todo.topic.less" : "todo.topic.more"),
-                (s, e) => OnTodoTopicToggled(row.TopicKey));
-            strip.Children.Add(toggle);
 
             Grid.SetRow(strip, 1);
             container.Children.Add(strip);
@@ -2323,22 +2365,21 @@ namespace OutlookAiHelper.UI
             }
 
             var source = _items
-                .Where(i => _filterAll || i.Classification.Quadrant == _filter)
-                .OrderByDescending(i => i.Classification.UrgencyScore + i.Classification.ImportanceScore)
-                .ThenByDescending(i => i.Mail.ReceivedOn)
-                .ToList();
+                .Where(i => _filterAll || i.Classification.Quadrant == _filter);
 
             RefreshTodoEntryIds();
 
-            // Mails about the same topic fold into one row; the window only ever renders rows;
-            // and the row order itself comes from the one mail sort the user picked, which the
-            // related mails beside a follow-up also use.
-            var rows = MailOrdering.SortRows(
-                MailThreads.Group(
-                    source,
-                    id => _todoEntryIds.Contains(id),
-                    key => _expandedThreads.Contains(key)),
-                CurrentMailSort());
+            // Mails about the same topic fold into one row; the window only ever renders rows.
+            // The sort runs before the fold on purpose: the fold reads the order it is handed
+            // for both where a topic sits and which of its mails the row presents, so folding a
+            // list that was ordered by score would leave a topic showing an older mail while
+            // its row sat at the newer one's height. BuildRows is the one place that order is
+            // kept, and the related mails beside a follow-up use the same comparer.
+            var rows = MailOrdering.BuildRows(
+                source,
+                CurrentMailSort(),
+                id => _todoEntryIds.Contains(id),
+                key => _expandedThreads.Contains(key));
             var stats = MailThreads.Summarize(rows);
 
             _mailList.Items.Clear();
@@ -2439,19 +2480,78 @@ namespace OutlookAiHelper.UI
             return host;
         }
 
+        /// <summary>
+        /// The sidebar the list gives up width to. 200pt still fits the longest page name with
+        /// its icon and leaves the list about 20pt more than it had at the old 220pt.
+        /// </summary>
+        private const double SidebarWidth = 200;
+
+        /// <summary>
+        /// Two lines of list text, measured exactly: LineHeight is pinned on the text blocks so
+        /// this cap trims a wrapped third line instead of letting a sliver of it show.
+        /// </summary>
+        private const double TwoLineHeight = 36;
+
+        /// <summary>
+        /// One or two lines of a mail's own opening, in the quiet colour, or null when there
+        /// is nothing to show. Only the local reader fills Preview; the cloud reader asks for
+        /// Mail.ReadBasic, which carries no body, so its rows simply have no third line.
+        /// </summary>
+        private static TextBlock BuildPreviewText(string preview)
+        {
+            if (string.IsNullOrEmpty(preview))
+            {
+                return null;
+            }
+
+            return new TextBlock
+            {
+                Text = preview,
+                FontSize = UiKit.TypeFootnote,
+                Foreground = Theme.SecondaryBrush,
+                TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                LineHeight = 17,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                MaxHeight = 34,
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+        }
+
+        /// <summary>
+        /// The preview of the mail a follow-up was made from, when that mail is still in the
+        /// last scan. A follow-up whose mail is gone simply has no preview line.
+        /// </summary>
+        private string PreviewForTodo(TodoItem item)
+        {
+            if (item == null || string.IsNullOrEmpty(item.SourceEntryId))
+            {
+                return null;
+            }
+
+            var mail = FindScannedMail(item.SourceEntryId);
+            return mail == null || mail.Mail == null ? null : mail.Mail.Preview;
+        }
+
         private FrameworkElement BuildRow(MailListRow row)
         {
             var item = row.Head;
             var leading = UiKit.StatusDot(item.Classification.Quadrant);
 
             var titles = new StackPanel();
+            // Two lines for a subject: one line was why a narrow list showed only the opening
+            // of every subject, and the second line is read before the preview is.
             titles.Children.Add(new TextBlock
             {
                 Text = item.Mail.Subject,
-                FontSize = UiKit.TypeBody,
-                FontWeight = FontWeights.Regular,
+                FontSize = UiKit.TypeSubhead,
+                FontWeight = FontWeights.Medium,
                 Foreground = Theme.InkBrush,
-                TextTrimming = TextTrimming.CharacterEllipsis
+                TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                LineHeight = 18,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                MaxHeight = TwoLineHeight
             });
 
             var sub = item.Mail.FromName + " · " + item.Mail.ReceivedOn.ToString("MM/dd HH:mm");
@@ -2464,12 +2564,18 @@ namespace OutlookAiHelper.UI
             titles.Children.Add(new TextBlock
             {
                 Text = sub,
-                FontSize = UiKit.TypeCaption,
+                FontSize = UiKit.TypeFootnote,
                 FontWeight = FontWeights.Regular,
                 Foreground = Theme.MutedBrush,
-                Margin = new Thickness(0, 4, 0, 0),
+                Margin = new Thickness(0, 3, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
+
+            var preview = BuildPreviewText(item.Mail.Preview);
+            if (preview != null)
+            {
+                titles.Children.Add(preview);
+            }
 
             // Trailing cluster, left to right: disclosure triangle (topics only), quadrant name,
             // then the 已加入待辦 tag last — the tag is what the eye lands on at the row's end.
@@ -2556,16 +2662,26 @@ namespace OutlookAiHelper.UI
                 Text = item.Mail.Subject,
                 FontSize = UiKit.TypeSubhead,
                 Foreground = Theme.InkBrush,
-                TextTrimming = TextTrimming.CharacterEllipsis
+                TextWrapping = TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                LineHeight = 18,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                MaxHeight = TwoLineHeight
             });
             titles.Children.Add(new TextBlock
             {
                 Text = item.Mail.FromName + " · " + item.Mail.ReceivedOn.ToString("MM/dd HH:mm"),
-                FontSize = UiKit.TypeCaption,
+                FontSize = UiKit.TypeFootnote,
                 Foreground = Theme.MutedBrush,
                 Margin = new Thickness(0, 2, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
+
+            var preview = BuildPreviewText(item.Mail.Preview);
+            if (preview != null)
+            {
+                titles.Children.Add(preview);
+            }
 
             // Nesting: an empty spacer the width of the parent's dot would already line the
             // member's text up with the parent's text, so this spacer plus the extra 18pt sets

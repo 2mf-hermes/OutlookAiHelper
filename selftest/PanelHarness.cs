@@ -124,6 +124,10 @@ internal static class PanelHarness
             TodoItem todo = TodoItem.Create(title, entryId, quadrant, sender, DateTime.Now.AddDays(-2));
             todo.Note = note;
 
+            // A second follow-up on the same subject, so the follow-up list folds a topic and the
+            // chevron beside the lead row's delete button exists to be measured.
+            TodoItem sibling = TodoItem.Create(title, entryId + "-reply", quadrant, sender, DateTime.Now.AddDays(-3));
+
             var source = MakeMail(entryId, subject, sender, address, folder, reasonDetail);
             var reply = MakeMail(entryId + "-reply", replyPrefix + subject, sender, address, folder, reasonDetail);
 
@@ -152,6 +156,11 @@ internal static class PanelHarness
                 todos.Add(todo);
             }
 
+            if (todos != null && !todos.Contains(sibling))
+            {
+                todos.Add(sibling);
+            }
+
             // The related mail of the topic, clicked the way its row's handler reaches it: that
             // mail's own facts go into the card above, and the card's own open action comes back.
             exit |= Pass(win, host, items, todo, "ShowTodoDetail", new ScanResultItem[] { source, reply },
@@ -162,6 +171,7 @@ internal static class PanelHarness
             // the settings hold. Read-only - a pick driven from here would write the user's real
             // settings file, so what a chosen order does to the rows stays with the ordering tests.
             exit |= SortControls(win, outPng);
+            exit |= RowChecks(win, outPng);
 
             win.Close();
             app.Shutdown();
@@ -581,6 +591,140 @@ internal static class PanelHarness
     /// order the settings hold. What a chosen order does to the rows is the ordering tests' job;
     /// where the block sits is what the whole-window shots show.
     /// </summary>
+    private const string FixturePreview = "Fixture preview: the opening of the mail, in the list.";
+
+    /// <summary>
+    /// What a list row has to do for two mails with the same subject to be told apart: a subject
+    /// that may run to two lines, the mail's own opening underneath it, and - in the follow-up
+    /// list - the topic's chevron sitting left of that row's delete button.
+    /// </summary>
+    private static int RowChecks(Window win, string pngBase)
+    {
+        int ok = 0;
+        int total = 0;
+        Say("=== list rows: what the left panel shows ===");
+
+        Invoke(win, "ShowPage", "quadrants");
+        Pump();
+        win.UpdateLayout();
+        if (pngBase != null)
+        {
+            CaptureWindow(win, pngBase, 9);
+        }
+
+        DependencyObject mailList = Field(win, "_mailList") as DependencyObject;
+        FrameworkElement mailListFe = mailList as FrameworkElement;
+        Say("  the mail list is " + (mailListFe == null ? 0 : mailListFe.ActualWidth).ToString("0.#", CultureInfo.InvariantCulture)
+            + " wide in a " + win.Width.ToString("0.#", CultureInfo.InvariantCulture) + " window");
+        TextBlock mailPreview = FindText(mailList, FixturePreview);
+        ok += SortCheck(ref total, "a mail row shows the opening of the mail",
+            mailPreview != null && OnScreen(mailPreview));
+        TextBlock mailTitle = mailPreview == null ? null : TitleBeside(mailPreview);
+        ok += SortCheck(ref total, "a mail row's subject may run to two lines",
+            mailTitle != null && mailTitle.TextWrapping == TextWrapping.Wrap
+            && mailTitle.MaxHeight >= 32);
+        Say("  mail row: " + (mailPreview == null ? "no preview line" : "preview " + mailPreview.ActualWidth.ToString("0.#", CultureInfo.InvariantCulture) + " wide")
+            + ", " + (mailTitle == null ? "no wrapped title" : "title wraps, cap " + mailTitle.MaxHeight.ToString("0.#", CultureInfo.InvariantCulture)));
+
+        Invoke(win, "ShowPage", "todo");
+        Pump();
+        win.UpdateLayout();
+
+        DependencyObject todoList = Field(win, "_todoList") as DependencyObject;
+        TextBlock todoPreview = FindText(todoList, FixturePreview);
+        ok += SortCheck(ref total, "a follow-up row shows the opening of its mail",
+            todoPreview != null && OnScreen(todoPreview));
+
+        FrameworkElement chevron = FindChevron(todoList);
+        FrameworkElement del = FindButton(todoList, Strings.T("action.todoDelete"));
+        bool left = chevron != null && del != null
+            && Math.Abs(PointOf(chevron, win).Y - PointOf(del, win).Y) < 14
+            && PointOf(chevron, win).X < PointOf(del, win).X - 1;
+        ok += SortCheck(ref total, "the topic's chevron sits left of the delete button", left);
+        Say("  chevron " + (chevron == null ? "(none)" : PointOf(chevron, win).X.ToString("0.#", CultureInfo.InvariantCulture) + "," + PointOf(chevron, win).Y.ToString("0.#", CultureInfo.InvariantCulture))
+            + " vs delete " + (del == null ? "(none)" : PointOf(del, win).X.ToString("0.#", CultureInfo.InvariantCulture) + "," + PointOf(del, win).Y.ToString("0.#", CultureInfo.InvariantCulture)));
+
+        Say("listRows: " + ok + "/" + total);
+        return ok == total ? 0 : 1;
+    }
+
+    private static TextBlock FindText(DependencyObject root, string text)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        foreach (DependencyObject d in Descendants(root))
+        {
+            TextBlock tb = d as TextBlock;
+            if (tb != null && tb.Text == text)
+            {
+                return tb;
+            }
+        }
+
+        return null;
+    }
+
+    private static TextBlock TitleBeside(TextBlock preview)
+    {
+        Panel panel = VisualTreeHelper.GetParent(preview) as Panel;
+        if (panel == null)
+        {
+            return null;
+        }
+
+        foreach (UIElement child in panel.Children)
+        {
+            TextBlock tb = child as TextBlock;
+            if (tb != null && tb.TextWrapping == TextWrapping.Wrap && tb.MaxHeight > 30)
+            {
+                return tb;
+            }
+        }
+
+        return null;
+    }
+
+    private static FrameworkElement FindChevron(DependencyObject root)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        foreach (DependencyObject d in Descendants(root))
+        {
+            Button b = d as Button;
+            if (b != null && b.Content != null && b.Content.GetType().Name == "Path")
+            {
+                return b;
+            }
+        }
+
+        return null;
+    }
+
+    private static FrameworkElement FindButton(DependencyObject root, string text)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        foreach (DependencyObject d in Descendants(root))
+        {
+            Button b = d as Button;
+            if (b != null && (b.Content as string) == text)
+            {
+                return b;
+            }
+        }
+
+        return null;
+    }
+
     private static int SortControls(Window win, string pngBase)
     {
         Say("");
@@ -897,6 +1041,7 @@ internal static class PanelHarness
         mail.HasFlag = false;
         mail.IsMeetingRequest = true;
         mail.Importance = 0;
+        mail.Preview = FixturePreview;
 
         var reasons = new List<ScoreReason>();
         reasons.Add(new ScoreReason("fixture", "reason.signal.importance", 3, reasonDetail));

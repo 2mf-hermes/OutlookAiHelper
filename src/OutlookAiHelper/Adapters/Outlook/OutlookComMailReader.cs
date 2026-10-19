@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
 using OutlookAiHelper.Adapters.Logging;
 using OutlookAiHelper.Core.Abstractions;
 using OutlookAiHelper.Core.Models;
@@ -541,8 +542,60 @@ namespace OutlookAiHelper.Adapters.Outlook
                     IsRead = isRead,
                     HasFlag = hasFlag,
                     IsMeetingRequest = objectClass == 53 || objectClass == 54,
-                    Importance = importance
+                    Importance = importance,
+                    Preview = ReadPreview(item)
                 };
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// The opening of the mail's own text, flattened to one line and cut to 180 characters,
+        /// so a list can tell two mails with the same subject apart. It lives only on the
+        /// in-memory summary: nothing stores, logs or uploads it. The local object model hands
+        /// the body over without any additional permission; a body that cannot be read costs
+        /// the preview, never the mail.
+        /// </summary>
+        private static string ReadPreview(object item)
+        {
+            const int limit = 180;
+            try
+            {
+                var body = ToText(Invoke(item, "Body"));
+                if (string.IsNullOrEmpty(body))
+                {
+                    return null;
+                }
+
+                var sb = new StringBuilder(limit + 1);
+                var pendingSpace = false;
+                foreach (var ch in body)
+                {
+                    if (char.IsWhiteSpace(ch))
+                    {
+                        pendingSpace = sb.Length > 0;
+                        continue;
+                    }
+
+                    if (sb.Length >= limit)
+                    {
+                        break;
+                    }
+
+                    if (pendingSpace)
+                    {
+                        sb.Append(' ');
+                        pendingSpace = false;
+                    }
+
+                    sb.Append(ch);
+                }
+
+                var text = sb.ToString().Trim();
+                return text.Length == 0 ? null : text;
             }
             catch (Exception)
             {
