@@ -16,6 +16,7 @@ namespace OutlookAiHelper.TestHost
             failed += AutoRefreshTests.Run();
             failed += MailThreadTests.Run();
             failed += MailOrderingTests.Run();
+            failed += ListSearchTests.Run();
             failed += UpdateTests.Run();
             failed += MailSourceTests.Run();
             failed += GraphMailTests.Run();

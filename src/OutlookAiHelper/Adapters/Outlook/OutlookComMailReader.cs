@@ -543,8 +543,37 @@ namespace OutlookAiHelper.Adapters.Outlook
                     HasFlag = hasFlag,
                     IsMeetingRequest = objectClass == 53 || objectClass == 54,
                     Importance = importance,
-                    Preview = ReadPreview(item)
+                    Preview = ReadPreview(item),
+                    ToLine = ReadRecipients(item, "To"),
+                    CcLine = ReadRecipients(item, "CC")
                 };
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// The recipient line Outlook shows for a mail ("Name &lt;address&gt;; ..."), so the list can be
+        /// searched by 收件者 as well as by sender. It is read defensively: a property that cannot
+        /// be fetched costs the recipient line, never the mail. Display only, like the preview:
+        /// nothing stores, logs or sends it. The cloud reader cannot supply it while it only asks
+        /// for Mail.ReadBasic.
+        /// </summary>
+        private static string ReadRecipients(object item, string property)
+        {
+            const int limit = 400;
+            try
+            {
+                var text = ToText(Invoke(item, property));
+                if (string.IsNullOrEmpty(text))
+                {
+                    return null;
+                }
+
+                text = text.Replace("\r", " ").Replace("\n", " ").Trim();
+                return text.Length <= limit ? text : text.Substring(0, limit);
             }
             catch (Exception)
             {
@@ -800,7 +829,10 @@ namespace OutlookAiHelper.Adapters.Outlook
                 }
 
                 var head = string.IsNullOrEmpty(bestId) ? "empty" : InboxProbe.MakeFragment(bestId, bestReceived);
-                return head + "#" + unreadPart;
+                // The total count is read anyway, and it is the one part of this fragment that
+                // catches an arrival the head sample cannot show: mail already read again
+                // before the tick, or a view that does not sort the newest mail to the top.
+                return head + "#" + unreadPart + "/" + count;
             }
             catch (Exception ex)
             {

@@ -13,6 +13,7 @@ Windows 桌面小工具（WPF、.NET Framework 4.x，單一執行檔）。用可
 | --- | --- |
 | 四象限 | 依規則分數列出郵件、顯示評分理由，可手動覆寫象限、開啟於 Outlook |
 | 待辦 | 從郵件加入待辦、完成／刪除，資料存本機 JSON |
+| 搜尋 | 郵件清單與待回待辦各有一個搜尋框：可用主旨、內容摘要、寄件者、收件者等關鍵字即時篩選，清空即恢復原清單 |
 | 設定 | 掃描天數、關鍵字、VIP、語言（繁中／簡中／英文）、AI 供應商與模型、軟體更新 |
 
 ## 隱私邊界
@@ -71,7 +72,7 @@ src/OutlookAiHelper/
   UI/                        MainWindow、UiKit、Theme、UpdateSheet
   Localization/Strings.cs    繁中／簡中／英文
 tests/                       建置後執行、無框架的測試（規則、儲存、掃描範圍、更新）
-selftest/                   右側面板 harness：在行程內開真視窗、呼叫視窗自己的選取處理常式，跑六種狀態（84 條斷言），另外量清單列本身的四條
+selftest/                   右側面板 harness：在行程內開真視窗、呼叫視窗自己的選取處理常式，跑七種狀態（96 條斷言），另外量清單列本身的四條
 ```
 
 ## 測試
@@ -80,7 +81,7 @@ selftest/                   右側面板 harness：在行程內開真視窗、�
 dist\OutlookAiHelper.Tests.exe
 ```
 
-涵蓋：分類規則、待辦儲存、設定隱私與毀損隔離、掃描範圍（刪除的郵件排除）、更新版本比較與更新安全政策 / Release 解析。目前 223 項全部通過。
+涵蓋：分類規則、待辦儲存、設定隱私與毀損隔離、掃描範圍（刪除的郵件排除）、更新版本比較與更新安全政策 / Release 解析。目前 237 項全部通過。
 
 右側面板另外有一條 harness。面板在點選前是收合的，而合成點擊需要視窗在前景——無人桌面給不了，所以它改成在行程內開同一個視窗、直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail` / `OnRelatedMailClick`），再把畫面上真正看得見的文字讀回來。跑之前先 `build.ps1` 產生 `dist\OutlookAiHelper.exe`：
 
@@ -88,7 +89,7 @@ dist\OutlookAiHelper.Tests.exe
 powershell -NoProfile -ExecutionPolicy Bypass -File selftest\run_panel.ps1
 ```
 
-它會跑六種狀態共 84 條斷言，外加清單列的四條（合計 88 條），印出「N/M 條斷言在畫面上」與 exit code，並把 `panel-out.txt` 與八張 `panel-out-*.png` 留在 `selftest\`（皆列在 `.gitignore`）。第六種狀態另外確認兩個清單各自的排序下拉都在畫面上、選項與程式宣告的一致、且開在設定記住的那個排序；也把視窗縮到最窄（900）再確認兩個排序下拉與「開始掃描」都還在視窗內，並直接量到工具列由一列長成兩列（98px → 146px）。
+它會跑七種狀態共 96 條斷言，外加清單列的四條（合計 100 條），印出「N/M 條斷言在畫面上」與 exit code，並把 `panel-out.txt` 與十一張 `panel-out-*.png` 留在 `selftest\`（皆列在 `.gitignore`）。第六種狀態另外確認兩個清單各自的排序下拉都在畫面上、選項與程式宣告的一致、且開在設定記住的那個排序；也把視窗縮到最窄（900）再確認兩個排序下拉與「開始掃描」都還在視窗內，並直接量到工具列由一列長成兩列（98px → 146px）。
 
 ## 授權
 

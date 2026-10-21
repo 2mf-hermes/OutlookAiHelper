@@ -723,7 +723,7 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 
 **驗證方式**：右側面板在沒有點選前列是收合的，而合成點擊需要前景——無人桌面給不了，所以那一條 smoke 檢查一直是 SKIP。改用**同處理序**（in-process）harness：把視窗開在同一個處理序裡，直接呼叫視窗自己的選取處理常式（`ShowTodoDetail` / `OnMailSelectedDetail` / `OnRelatedMailClick`），再走視覺樹讀回畫面上真正看得見的文字。六種狀態共 84 條斷言：待辦選取且信在掃描內、待辦選取但信不在掃描內、從郵件清單點一列（沒有待辦）、待辦的主題只有自己一封信（主題卡必須收合而不是空著）、待辦的主題中的另一封信被點擊（郵件資訊卡的那個開啟動作必須跟著換到那一封，harness 另外直接檢查它指向的那個 entry id）、第六種檢查兩個清單各自的排序下拉都在畫面上、選項與程式宣告的一致、且開在設定記住的那個排序（只讀：在 harness 裡改下拉會寫到使用者的真實設定檔）。同一輪也在 900px 最窄視窗下確認兩個排序下拉與「開始掃描」都仍在視窗內，並直接量到工具列由一列長成兩列（98px → 146px）——換行是量到的，不是假設的。
 
-### 12.5 兩種清單的排序區塊、待回待辦的同主題整合（未發行）
+### 12.5 兩種清單的排序區塊、待回待辦的同主題整合（v1.5.0）
 
 排序引擎其實早就有了（`Application/MailOrdering.cs` 五種；`Core/Models/TodoOrdering.cs` 這一版補上「最新優先」共六種），郵件清單也一直都是「時間降序」——問題是使用者看不到也改不到：郵件清單的排序只長在設定頁，改完要按「儲存」才生效；待回待辦雖然有排序下拉，卻在工具列最左邊，而且每次重開都回到預設。這一版把排序搬到清單自己身上：
 
@@ -756,7 +756,7 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 
 **驗證方式**：`Application/TodoTopics.cs` 不碰 WPF，所以整合規則可以直接量：`tests/TodoTopicTests.cs` 十二條（同主題成一列、不同主題各一列、大小寫與空白不拆、只有一項不算主題、無法構成主題者永遠單獨、主導順序由使用者選的排序決定、已完成仍屬於它的主題且不被算成未完成、整合不增不減、統計只算真的整合、空清單不炸），註冊在 `tests/TestRunner.cs`，測試數 209 → 221。畫面仍由面板 harness 量：`selftest/run_panel.ps1` 六種狀態 84/84、exit 0。
 
-### 12.6 清單列的版面、郵件摘要與同主題列的展開圖示（未發行）
+### 12.6 清單列的版面、郵件摘要與同主題列的展開圖示（v1.5.0）
 
 - **排序落點（修正）**：`MailThreads` 的折疊沿用呼叫端給的順序，而 `MailOrdering.SortRows` 只決定「列」排在哪，不重排列裡的信；所以列的位置看最新一封、列首卻是原本排第一的那封。`MailOrdering.BuildRows` 現在一律先 `SortMails` 再折疊：時間模式下列首就是最新一封，象限模式仍由分數決定列首。
 - **側欄寬度**：`SidebarWidth` 由 220pt 收成 200pt（欄位宣告與 `UpdatePanelWidths()` 共用同一個常數），清單因此多出 20pt；視窗最小寬度維持 900。
@@ -765,3 +765,23 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - **同主題的展開圖示**：`BuildTodoTopicRow` 的主要信那一列改用 `UiKit.ChevronGlyph`（既有元件），放在「刪除」左側。
 
 **驗證**：`tests/MailOrderingTests.cs` 改寫三條（列首在最新優先下是最新一封、同主題內不把舊信排在新信之上、非時間模式仍由分數決定列首），測試 221 → 223。面板 harness 多一組列斷言：郵件列看得到摘要、主旨可兩行、待辦列看得到摘要、展開圖示在刪除左側（4/4），原有六種狀態仍 84/84、exit 0。
+
+### 12.7 自動刷新的決策、兩個清單的搜尋（未發行）
+
+**症狀與量到的事實。** 自動刷新「沒有作用」不是計時器壞掉：面板 harness 的暫測輸出顯示 `DispatcherTimer` 有起來、`Interval` 等於設定值。問題在探針與「要不要重掃」這一段——探針拿不到資料時（Outlook 沒開，或探針執行緒附加失敗）舊程式直接 `return`，於是每一次 tick 都無聲跳過，清單再也不會更新；而探針壞掉與「沒有變化」在程式裡長得一模一樣。
+
+- **決策抽成純型別**：`Core/Models/AutoRefreshDecision.cs` 的 `ShouldScan(probeUsable, probeChanged, lastScanUtc, nowUtc, ceiling)`。探針看到變化就掃；探針壞掉時仍由上限（`AutoRefreshCeiling`，30 分鐘）決定何時掃。型別註解把原則寫死：**探針是加速器，不是開關**。
+- **壞掉的路徑改成發聲再試**：`UI/MainWindow.AutoRefresh.cs` 在上限要求掃描而探針不可用時，先問 `_reader.IsAvailable(out reason)`；不可用就寫 log 並等下一次 tick，可用就照掃。三種跳過（關閉、沒變化／探不到、連不上）各留一行 log，不再有無聲的 `return`。
+- **回到視窗補一次**：`Activated` 觸發 `OnWindowActivated`，10 秒節流（`AutoRefreshActivationThrottle`）。最小化期間的 tick 是刻意跳過的，這條補上那個空窗，又不會讓 alt-tab 每次打 COM。
+- **探針的界線不變**：只讀 Inbox 開頭（`ProbeHeadSample = 10`）的最新 `ReceivedTime` 與未讀數，不改 Outlook 的檢視排序，全部唯讀。分類規則把信直接搬去別的資料夾時探針看不到，靠上面那個上限補。
+
+**搜尋。**
+
+- **一個純 matcher**：`Core/Models/ListSearch.cs`。查詢以空白切詞（含中文輸入法的全角空格），每個詞都要在某一欄命中，詞可以是片段、不必相鄰也不必照順序；大小寫以不變文化折疊。它只讀程式已經握有的文字——不碰信箱、不碰檔案。
+- **兩個清單各一個搜尋框**：`UI/MainWindow.Search.cs`（新的 partial 檔）把 `UiKit.Input` 的 `TextBox` 接進各自清單的卡片裡（郵件在清單卡片頂端，待辦在頁面控制列下方）。WPF 沒有 placeholder，所以用一個 `IsHitTestVisible = false` 的提示文字疊在輸入框上，有字就讓開；Esc 清空；提示文字同時是 `AutomationProperties.SetName`，螢幕閱讀器唸得出可以搜什麼。
+- **比對哪些欄位**：郵件＝主旨、內容摘要、寄件者姓名與位址、To 與 Cc 兩行；待辦＝標題、備註、來源信寄件者，再加上用 `FindScannedMail(SourceEntryId)` 找回的來源信（那封信還在掃描結果裡時，收件者與內文才搜得到）。
+- **收件者是新的資料**：`MailSummary` 新增 `ToLine`／`CcLine`，由 `OutlookComMailReader.ReadRecipients` 讀 `To`／`CC` 屬性填入，只供顯示與搜尋，不儲存、不寫 log、不外送。
+- **雲端來源的限制照舊**：Graph 這條路只要求 `Mail.ReadBasic`，沒有內文、也沒有收件者，因此雲端來源用「內容」或「收件者」搜尋會是空的——與 12.6 的摘要限制同源，這一版不放寬範圍，也不假裝搜得到。
+- **打字只改畫面**：查詢空的時候不過濾（`IsActive` 為 false），所以清空就回到原本的清單，不需要重掃；查無結果時顯示 `search.mail.empty`／`search.todo.empty`（帶查詢字串），與「本來就沒有郵件／待辦」的空狀態分開。
+
+**驗證**：`tests/ListSearchTests.cs` 註冊進 `tests/TestRunner.cs`；`tests/AutoRefreshTests.cs` 加三條（探針壞掉仍在上限掃、探針看到變化會提前掃、從未掃過的郵箱第一次 tick 就掃），測試 223 → 237 全過。面板 harness 新增第七種狀態 12 條（寄件者姓名、主旨中的一個詞、收件者、查無此詞清空清單、清空後全部回來、待辦標題同理），合計 100/100、exit 0；第六種狀態的窄視窗斷言仍綠（工具列 98px → 146px）。

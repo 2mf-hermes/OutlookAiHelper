@@ -40,6 +40,15 @@ namespace OutlookAiHelper.UI
         private bool _autoRefreshBusy;
         private bool _scanRunning;
         private DateTime? _lastScanCompletedUtc;
+        private DateTime _lastProbeAttemptUtc;
+        private bool _autoRefreshActivationHooked;
+
+        /// <summary>
+        /// Coming back to the window is a good moment to check for mail, but alt-tabbing
+        /// must not cost a COM round trip every time: faster than this and the activation
+        /// check only re-reads what the timer has just read.
+        /// </summary>
+        private static readonly TimeSpan AutoRefreshActivationThrottle = TimeSpan.FromSeconds(10);
 
         private static int AutoRefreshChoiceIndex(int minutes)
         {
@@ -76,6 +85,15 @@ namespace OutlookAiHelper.UI
                 _autoRefreshTimer.Tick += OnAutoRefreshTick;
             }
 
+            if (!_autoRefreshActivationHooked)
+            {
+                // Ticks while the window is hidden are skipped on purpose, which leaves the
+                // list at its stalest exactly when the user comes back to read it. Checking
+                // on activation closes that gap without adding a second timer.
+                Activated += OnWindowActivated;
+                _autoRefreshActivationHooked = true;
+            }
+
             _autoRefreshTimer.Stop();
             if (minutes <= 0)
             {
@@ -100,6 +118,27 @@ namespace OutlookAiHelper.UI
             }
         }
 
+        /// <summary>
+        /// The window came back into view. Probe now rather than wait out the interval, at
+        /// most once every <see cref="AutoRefreshActivationThrottle"/> seconds.
+        /// </summary>
+        private async void OnWindowActivated(object sender, EventArgs e)
+        {
+            try
+            {
+                if (DateTime.UtcNow - _lastProbeAttemptUtc < AutoRefreshActivationThrottle)
+                {
+                    return;
+                }
+
+                await AutoRefreshTickAsync();
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Error("AutoRefreshActivated", ex);
+            }
+        }
+
         private async Task AutoRefreshTickAsync()
         {
             if (_autoRefreshBusy || _scanRunning || _settings == null || _settings.AutoRefreshMinutes <= 0)
@@ -114,26 +153,43 @@ namespace OutlookAiHelper.UI
                 return;
             }
 
+            _lastProbeAttemptUtc = DateTime.UtcNow;
             _autoRefreshBusy = true;
             try
             {
                 var probe = await ProbeInboxAsync();
-                if (probe == null || !probe.IsUsable)
-                {
-                    FileLogger.Info("Auto refresh probe unavailable; skipping this tick");
-                    return;
-                }
-
-                var changed = !string.Equals(probe.Signature, _inboxSignature, StringComparison.Ordinal);
+                var usable = probe != null && probe.IsUsable;
+                var changed = usable
+                    && !string.Equals(probe.Signature, _inboxSignature, StringComparison.Ordinal);
+                var nowUtc = DateTime.UtcNow;
                 var ceilingReached = !_lastScanCompletedUtc.HasValue
-                    || DateTime.UtcNow - _lastScanCompletedUtc.Value >= AutoRefreshCeiling;
-                if (!changed && !ceilingReached)
+                    || nowUtc - _lastScanCompletedUtc.Value >= AutoRefreshCeiling;
+
+                if (!AutoRefreshDecision.ShouldScan(usable, changed, _lastScanCompletedUtc, nowUtc, AutoRefreshCeiling))
                 {
+                    FileLogger.Info("Auto refresh probe unchanged or unavailable; skipping this tick");
                     return;
                 }
 
+                if (!usable)
+                {
+                    // The ceiling says scan, but the probe could not reach Outlook. Scanning
+                    // anyway would replace the list with the error card, so ask the reader
+                    // once on this thread, where the same attach has always worked.
+                    string reason;
+                    if (!_reader.IsAvailable(out reason))
+                    {
+                        FileLogger.Info("Auto refresh skipped: Outlook not reachable (" + reason + ")");
+                        return;
+                    }
+                }
+
+                // A rescan the ceiling ordered while the probe was blind has no unread count to
+                // report: say so, rather than dereferencing a probe that is not there and losing
+                // the scan this line was about to log.
+                var unread = probe == null ? -1 : probe.UnreadCount;
                 FileLogger.Info("Auto refresh rescan (changed=" + changed
-                    + " ceiling=" + ceilingReached + " unread=" + probe.UnreadCount + ")");
+                    + " ceiling=" + ceilingReached + " unread=" + unread + ")");
                 await RunScanAsync();
                 _statusText.Text = string.Format(Strings.T("auto.refresh.updated"), _items.Count);
             }

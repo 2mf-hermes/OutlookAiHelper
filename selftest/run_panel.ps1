@@ -73,7 +73,9 @@ $code = $LASTEXITCODE
 $lines = Get-Content -LiteralPath $outTxt -Encoding UTF8
 $ok = 0; $total = 0; $hard = 0
 foreach ($l in $lines) {
-    if ($l -match '^  [A-Za-z0-9_.]+: (\d+)/(\d+)$') { $ok += [int]$Matches[1]; $total += [int]$Matches[2] }
+    # Any indentation: the mail-row pass prints its count without a leading indent, and a counter
+    # that quietly skips it makes the harness report fewer assertions than it actually ran.
+    if ($l -match '^\s*[A-Za-z0-9_.]+: (\d+)/(\d+)$') { $ok += [int]$Matches[1]; $total += [int]$Matches[2] }
     if ($l -match 'FATAL|HARNESS ERROR') { $hard++ }
 }
 

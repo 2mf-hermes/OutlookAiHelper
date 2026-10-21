@@ -687,12 +687,24 @@ namespace OutlookAiHelper.UI
             Grid.SetRow(segmentHost, 1);
 
             var body = new Grid();
+            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            // The search belongs to the list it narrows, so it sits inside the list's card and
+            // above every state that card can be in: the list, nothing scanned yet, a failed scan.
+            var searchRow = BuildMailSearchRow();
+            body.Children.Add(searchRow);
+            Grid.SetRow(searchRow, 0);
+
             _listPanel = BuildListPanel();
             _emptyPanel = BuildEmptyPanel();
             _errorPanel = BuildErrorPanel();
             body.Children.Add(_listPanel);
             body.Children.Add(_emptyPanel);
             body.Children.Add(_errorPanel);
+            Grid.SetRow(_listPanel, 1);
+            Grid.SetRow(_emptyPanel, 1);
+            Grid.SetRow(_errorPanel, 1);
             var bodyWrap = UiKit.InsetGroupCard(body);
             grid.Children.Add(bodyWrap);
             Grid.SetRow(bodyWrap, 2);
@@ -850,12 +862,28 @@ namespace OutlookAiHelper.UI
                 Visibility = Visibility.Collapsed
             };
 
+            // A search that matches nothing leaves the list area blank, and "no match" is not the
+            // same message as "nothing scanned yet": this note says which of the two it is.
+            _listSearchEmpty = new TextBlock
+            {
+                FontSize = UiKit.TypeBody,
+                Foreground = Theme.MutedBrush,
+                TextWrapping = TextWrapping.Wrap,
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(24, 0, 24, 0),
+                Visibility = Visibility.Collapsed
+            };
+
             var host = new Grid();
             host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             Grid.SetRow(scroll, 0);
+            Grid.SetRow(_listSearchEmpty, 0);
             Grid.SetRow(_listSummary, 1);
             host.Children.Add(scroll);
+            host.Children.Add(_listSearchEmpty);
             host.Children.Add(_listSummary);
             return host;
         }
@@ -1025,6 +1053,9 @@ namespace OutlookAiHelper.UI
             inputRow.Children.Add(_todoInput);
             tools.Children.Add(inputRow);
             tools.Children.Add(BuildTodoToolsRow());
+            // The search sits closest to the list it narrows: the controls above it decide which
+            // follow-ups are on the page, this one decides which of those the words keep.
+            tools.Children.Add(BuildTodoSearchRow());
             grid.Children.Add(tools);
             Grid.SetRow(tools, 1);
 
@@ -1818,7 +1849,10 @@ namespace OutlookAiHelper.UI
                     _todoFilterMode == "All"
                     || (_todoFilterMode == "Done" && t.Status == TodoStatus.Done)
                     || (_todoFilterMode == "Open" && t.Status == TodoStatus.Open)
-                ));
+                ))
+                // A search narrows what the page shows, never what is stored: clearing the field
+                // brings the whole list back without a re-scan.
+                .Where(t => MatchesTodo(t));
 
             // Ordering lives in Core/Models/TodoOrdering so "what has been waiting longest"
             // is testable without Outlook or a window; Manual is the stored order.
@@ -1856,6 +1890,17 @@ namespace OutlookAiHelper.UI
                     nested.Margin = new Thickness(28, 0, 0, 0);
                     _todoList.Items.Add(nested);
                 }
+            }
+
+            var query = QueryOf(_todoSearch);
+            var searching = ListSearch.IsActive(query);
+            if (_todoEmpty != null)
+            {
+                // The page's own empty text says how to add a follow-up; after a search that found
+                // nothing the useful sentence is a different one.
+                _todoEmpty.Text = searching
+                    ? string.Format(Strings.T("search.todo.empty"), query.Trim())
+                    : Strings.T("todo.empty.body");
             }
 
             var empty = rows.Count == 0;
@@ -2365,7 +2410,10 @@ namespace OutlookAiHelper.UI
             }
 
             var source = _items
-                .Where(i => _filterAll || i.Classification.Quadrant == _filter);
+                .Where(i => _filterAll || i.Classification.Quadrant == _filter)
+                // The search narrows the same list the quadrant filter does, so the two compose:
+                // a word narrows the quadrant rather than replacing it.
+                .Where(i => MatchesMail(i.Mail));
 
             RefreshTodoEntryIds();
 
@@ -2397,6 +2445,25 @@ namespace OutlookAiHelper.UI
 
             UpdateListSummary(stats);
             _mailBadgeStale = false;
+
+            // Nothing has been scanned only before the first scan or after a failed one; the field
+            // is dead until there is something to search rather than quietly useless.
+            if (_mailSearch != null)
+            {
+                _mailSearch.IsEnabled = _items.Count > 0;
+            }
+
+            var query = QueryOf(_mailSearch);
+            var searching = ListSearch.IsActive(query);
+            if (_listSearchEmpty != null)
+            {
+                _listSearchEmpty.Text = searching
+                    ? string.Format(Strings.T("search.mail.empty"), query.Trim())
+                    : string.Empty;
+                _listSearchEmpty.Visibility = searching && rows.Count == 0 && _items.Count > 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
 
             if (_items.Count == 0)
             {

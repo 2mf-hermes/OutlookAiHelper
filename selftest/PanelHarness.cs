@@ -19,6 +19,10 @@
 //                         and panel-out-8.png (the narrow window, where the toolbar has to wrap):
 //                         the whole window, toolbars included, which the panel shots show only
 //                         from inside.
+//     (no keys)           pass 7: each list can be searched - a word typed into its field keeps
+//                         only the rows it names, and clearing the field gives every row back.
+//                         Writes panel-out-10.png (the mail list narrowed by a word) and
+//                         panel-out-11.png (the follow-up page's own field).
 //   Only text that is actually on screen counts: an element inside a collapsed card is in the tree
 //   with a zero size, and used to read as a pass by mistake.
 //
@@ -33,6 +37,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -172,6 +177,7 @@ internal static class PanelHarness
             // settings file, so what a chosen order does to the rows stays with the ordering tests.
             exit |= SortControls(win, outPng);
             exit |= RowChecks(win, outPng);
+            exit |= SearchChecks(win, outPng);
 
             win.Close();
             app.Shutdown();
@@ -867,6 +873,153 @@ internal static class PanelHarness
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// The search both lists carry, measured where a user meets it: words typed into the window's
+    /// own field, and the row titles still on screen afterwards. How a query is matched against a
+    /// row is covered by the search tests; what is covered here is that the field exists, that a
+    /// keystroke narrows the list to the row it names, and that clearing it gives every row back.
+    /// </summary>
+    private static int SearchChecks(Window win, string pngBase)
+    {
+        Say("");
+        Say("--- pass 7: each list can be searched ---");
+        int ok = 0;
+        int total = 0;
+
+        IList items = Field(win, "_items") as IList;
+        if (items == null)
+        {
+            Say("  FATAL: _items is not reachable by reflection.");
+            return 4;
+        }
+
+        // Three mail with something different in every field a search can reach: a sender, a
+        // subject word, and a recipient only the first one has.
+        items.Clear();
+        ScanResultItem one = MakeMail("search-1", SearchMailOne, "Wang Mei-ling",
+            "mei-ling.wang@example.com", "Inbox", "search fixture");
+        one.Mail.ToLine = "Finance Team <finance@example.com>";
+        one.Mail.CcLine = "External Auditor <auditor@example.org>";
+        items.Add(one);
+        items.Add(MakeMail("search-2", SearchMailTwo, "Chen Yu", "chen.yu@example.com", "Inbox",
+            "search fixture"));
+        items.Add(MakeMail("search-3", SearchMailThree, "Lin Hsin", "lin.hsin@example.com", "Inbox",
+            "search fixture"));
+
+        Invoke(win, "ShowPage", "quadrants");
+        Pump();
+        win.UpdateLayout();
+
+        TextBox field = Field(win, "_mailSearch") as TextBox;
+        ok += SortCheck(ref total, "the mail list has a search field on screen",
+            field != null && OnScreen(field) && field.IsEnabled);
+        ok += SortCheck(ref total, "the search field's name says what can be searched",
+            field != null && AutomationProperties.GetName(field) == Strings.T("search.mail.placeholder"));
+        Say("  " + Describe(win, "_mailSearch"));
+
+        string[] subjects = new string[] { SearchMailOne, SearchMailTwo, SearchMailThree };
+        ok += SortCheck(ref total, "a sender's name keeps only the mail it names",
+            Kept(win, field, "wang", subjects) == SearchMailOne);
+        ok += SortCheck(ref total, "a word of a subject keeps only the mail it is in",
+            Kept(win, field, "schedule", subjects) == SearchMailTwo);
+        ok += SortCheck(ref total, "a recipient keeps only the mail addressed to it",
+            Kept(win, field, "finance@example.com", subjects) == SearchMailOne);
+        ok += SortCheck(ref total, "a word that is in no mail empties the list",
+            Kept(win, field, "no-such-word-anywhere", subjects) == string.Empty);
+        TextBlock note = Field(win, "_listSearchEmpty") as TextBlock;
+        ok += SortCheck(ref total, "a search that matches nothing says so on screen",
+            note != null && note.Visibility == Visibility.Visible && OnScreen(note)
+            && note.Text.Length > 0);
+        ok += SortCheck(ref total, "every mail is back once the field is cleared",
+            Kept(win, field, string.Empty, subjects) == string.Join("|", subjects));
+        ok += SortCheck(ref total, "searching never changed what was scanned", items.Count == 3);
+        if (pngBase != null)
+        {
+            field.Text = "wang";
+            Pump();
+            win.UpdateLayout();
+            CaptureWindow(win, pngBase, 10);
+            field.Text = string.Empty;
+            Pump();
+            win.UpdateLayout();
+        }
+
+        // The follow-up page carries its own field, closest to the list it narrows.
+        Invoke(win, "ShowPage", "todo");
+        Pump();
+        win.UpdateLayout();
+
+        TextBox todoField = Field(win, "_todoSearch") as TextBox;
+        ok += SortCheck(ref total, "the follow-up page has its own search field on screen",
+            todoField != null && OnScreen(todoField) && todoField.IsEnabled);
+        Say("  " + Describe(win, "_todoSearch"));
+
+        IList todos = Todos(win);
+        if (todos != null)
+        {
+            todos.Add(TodoItem.Create(SearchTodoOne, "search-todo-a", "Q1", "sender@example.com",
+                DateTime.Now.AddDays(-1)));
+            todos.Add(TodoItem.Create(SearchTodoTwo, "search-todo-b", "Q1", "sender@example.com",
+                DateTime.Now.AddDays(-1)));
+        }
+
+        string[] followUps = new string[] { SearchTodoOne, SearchTodoTwo };
+        ok += SortCheck(ref total, "a follow-up's title keeps only the follow-up it names",
+            KeptIn(win, "_todoList", todoField, "schedule", followUps) == SearchTodoTwo);
+        ok += SortCheck(ref total, "every follow-up is back once the field is cleared",
+            KeptIn(win, "_todoList", todoField, string.Empty, followUps) == string.Join("|", followUps));
+        if (pngBase != null)
+        {
+            CaptureWindow(win, pngBase, 11);
+        }
+
+        Say(string.Format(CultureInfo.InvariantCulture, "  searchBoxes: {0}/{1}", ok, total));
+        return ok == total ? 0 : 1;
+    }
+
+    private const string SearchMailOne = "Quarterly invoice for the south site";
+    private const string SearchMailTwo = "Office move schedule";
+    private const string SearchMailThree = "Team lunch on Friday";
+    private const string SearchTodoOne = "Quarterly invoice to answer";
+    private const string SearchTodoTwo = "Office move to schedule";
+
+    /// <summary>Types a query into the mail list's field and names the mail rows still on screen.</summary>
+    private static string Kept(Window win, TextBox field, string query, string[] subjects)
+    {
+        return KeptIn(win, "_mailList", field, query, subjects);
+    }
+
+    /// <summary>
+    /// Types a query and reads back which of these titles are still rows on screen, in the order
+    /// given, joined with a bar. A row that is gone from the tree and a row that is merely
+    /// collapsed both read as absent, because only what is on screen counts.
+    /// </summary>
+    private static string KeptIn(Window win, string listField, TextBox field, string query,
+        string[] titles)
+    {
+        if (field == null)
+        {
+            return "(no field)";
+        }
+
+        field.Text = query;
+        Pump();
+        win.UpdateLayout();
+
+        DependencyObject list = Field(win, listField) as DependencyObject;
+        var kept = new List<string>();
+        foreach (string title in titles)
+        {
+            TextBlock row = FindText(list, title);
+            if (row != null && OnScreen(row))
+            {
+                kept.Add(title);
+            }
+        }
+
+        return string.Join("|", kept.ToArray());
     }
 
     /// <summary>The picker's items must be exactly these labels, in this order.</summary>

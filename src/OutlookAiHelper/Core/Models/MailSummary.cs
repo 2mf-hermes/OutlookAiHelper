@@ -11,6 +11,16 @@ namespace OutlookAiHelper.Core.Models
         public string FromName { get; set; }
         public string FromAddress { get; set; }
         public DateTime ReceivedOn { get; set; }
+
+        /// <summary>
+        /// The To and Cc lines as Outlook shows them ("Name &lt;address&gt;; ..."), so a list can be
+        /// searched by 收件者 as well as by sender. Display and search only, like Preview: never
+        /// stored, logged or sent. Null when the source cannot supply them - the cloud reader
+        /// only asks for Mail.ReadBasic, which carries no recipients.
+        /// </summary>
+        public string ToLine { get; set; }
+
+        public string CcLine { get; set; }
         public bool IsRead { get; set; }
         public bool HasFlag { get; set; }
         public bool IsMeetingRequest { get; set; }

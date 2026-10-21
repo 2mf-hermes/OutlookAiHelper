@@ -38,6 +38,29 @@ namespace OutlookAiHelper.Tests
                     return utc == local;
                 });
 
+                failed += Check("a broken probe still refreshes at the ceiling", () =>
+                {
+                    var last = new DateTime(2026, 9, 1, 1, 0, 0, DateTimeKind.Utc);
+                    var ceiling = TimeSpan.FromMinutes(30);
+                    var young = AutoRefreshDecision.ShouldScan(false, false, last, last.AddMinutes(1), ceiling);
+                    var due = AutoRefreshDecision.ShouldScan(false, false, last, last.AddMinutes(30), ceiling);
+                    return !young && due;
+                });
+
+                failed += Check("a probe that sees a change scans before the ceiling", () =>
+                {
+                    var last = new DateTime(2026, 9, 1, 1, 0, 0, DateTimeKind.Utc);
+                    var ceiling = TimeSpan.FromMinutes(30);
+                    return AutoRefreshDecision.ShouldScan(true, true, last, last.AddMinutes(1), ceiling)
+                        && !AutoRefreshDecision.ShouldScan(true, false, last, last.AddMinutes(1), ceiling);
+                });
+
+                failed += Check("a mailbox never scanned refreshes on the first tick", () =>
+                {
+                    var now = new DateTime(2026, 9, 1, 1, 0, 0, DateTimeKind.Utc);
+                    return AutoRefreshDecision.ShouldScan(true, false, null, now, TimeSpan.FromMinutes(30));
+                });
+
                 failed += Check("an unreachable inbox is unknown, not unchanged", () =>
                 {
                     var empty = new InboxProbe { Signature = null, InboxCount = 0 };
