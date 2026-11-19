@@ -319,6 +319,14 @@ namespace OutlookAiHelper.UI
                 yield return DetailFact(Strings.T("todo.detail.quadrant"), DetailValue(item.QuadrantHint));
             }
 
+            // v1.7.0: these three used to be written by the composer but were never
+            // shown anywhere, so a user had to open the sheet to learn what had been
+            // saved. The fact list is where the rest of the follow-up is described.
+            if (!string.IsNullOrEmpty(item.Category))
+            {
+                yield return DetailFact(Strings.T("todo.detail.category"), DetailValue(item.Category));
+            }
+
             yield return DetailFact(
                 Strings.T("todo.detail.created"),
                 DetailValue(item.CreatedOn.ToLocalTime().ToString("yyyy-MM-dd HH:mm")));
@@ -329,6 +337,24 @@ namespace OutlookAiHelper.UI
             if (item.DueOn.HasValue)
             {
                 yield return DetailFact(Strings.T("todo.detail.due"), DetailValue(DescribeDue(item)));
+            }
+
+            if (item.ReminderOn.HasValue)
+            {
+                var reminder = item.ReminderOn.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+                if (!done && item.IsReminderDue(DateTime.UtcNow))
+                {
+                    reminder += " (" + Strings.T("todo.detail.reminderOverdue") + ")";
+                }
+
+                yield return DetailFact(Strings.T("todo.detail.reminder"), DetailValue(reminder));
+            }
+
+            if (TodoRecurrence.IsRepeating(item.Repeat))
+            {
+                yield return DetailFact(
+                    Strings.T("todo.detail.repeat"),
+                    DetailValue(Strings.T("todo.repeat." + TodoRecurrence.Key(item.Repeat).ToLowerInvariant())));
             }
         }
 

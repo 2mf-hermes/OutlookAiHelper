@@ -42,7 +42,7 @@ namespace OutlookAiHelper.Application
             }
 
             var title = string.IsNullOrEmpty(mail.Subject) ? (mail.FromName ?? "Untitled") : mail.Subject;
-            var item = TodoItem.Create(title, mail.EntryId, quadrantHint, SenderOf(mail), ToUtc(mail.ReceivedOn));
+            var item = TodoItem.Create(title, mail.EntryId, quadrantHint, SenderOf(mail), TodoDates.ToUtc(mail.ReceivedOn));
             _items.Insert(0, item);
             Persist();
             return item;
@@ -61,17 +61,101 @@ namespace OutlookAiHelper.Application
             return item;
         }
 
-        public void ToggleDone(string id)
+        /// <summary>
+        /// Adds what the composer collected. The item is inserted at the top like the
+        /// other add paths, so a follow-up just created is where the user looks first.
+        /// </summary>
+        public TodoItem AddDraft(TodoDraft draft, string quadrantHint)
+        {
+            if (draft == null || string.IsNullOrWhiteSpace(draft.Title))
+            {
+                return null;
+            }
+
+            var item = TodoItem.Create(
+                draft.Title.Trim(),
+                draft.SourceEntryId,
+                quadrantHint,
+                draft.SourceFrom,
+                draft.SourceReceivedOn);
+            ApplyDraft(item, draft);
+            _items.Insert(0, item);
+            Persist();
+            return item;
+        }
+
+        /// <summary>
+        /// Copies an edited draft onto an existing item. Attachments are passed in
+        /// already resolved (the caller copied the new files and dropped the removed
+        /// ones), which keeps file I/O out of the use case. A null list means "leave
+        /// the attachments alone".
+        /// </summary>
+        public void UpdateDraft(string id, TodoDraft draft, IList<TodoAttachment> attachments = null)
+        {
+            var item = Find(id);
+            if (item == null || draft == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(draft.Title))
+            {
+                item.Title = draft.Title.Trim();
+            }
+
+            ApplyDraft(item, draft);
+            if (attachments != null)
+            {
+                item.Attachments = new List<TodoAttachment>(attachments);
+            }
+
+            item.UpdatedOn = DateTime.UtcNow;
+            Persist();
+        }
+
+        public TodoItem Get(string id)
+        {
+            return Find(id);
+        }
+
+        /// <summary>
+        /// Flips the item. Completing a repeating follow-up does not leave a finished
+        /// row behind: the due date moves to the next occurrence (and the reminder by
+        /// the same distance) and the item stays open, which is what the mainstream
+        /// task apps do. The next due instant is returned so the caller can say when,
+        /// and null means an ordinary open/done flip.
+        /// </summary>
+        public DateTime? ToggleDone(string id)
         {
             var item = Find(id);
             if (item == null)
             {
-                return;
+                return null;
+            }
+
+            if (item.Status == TodoStatus.Open && TodoRecurrence.IsRepeating(item.Repeat) && item.DueOn.HasValue)
+            {
+                var anchor = item.RepeatAnchorDay > 0
+                    ? item.RepeatAnchorDay
+                    : item.DueOn.Value.ToLocalTime().Day;
+                var next = TodoRecurrence.Next(item.DueOn.Value, item.Repeat, anchor);
+                var shift = next - item.DueOn.Value;
+                item.DueOn = next;
+                if (item.ReminderOn.HasValue)
+                {
+                    item.ReminderOn = item.ReminderOn.Value + shift;
+                }
+
+                item.RepeatAnchorDay = anchor;
+                item.UpdatedOn = DateTime.UtcNow;
+                Persist();
+                return next;
             }
 
             item.Status = item.Status == TodoStatus.Done ? TodoStatus.Open : TodoStatus.Done;
             item.UpdatedOn = DateTime.UtcNow;
             Persist();
+            return null;
         }
 
         public void SetNote(string id, string note)
@@ -120,6 +204,19 @@ namespace OutlookAiHelper.Application
             return removed;
         }
 
+        private static void ApplyDraft(TodoItem item, TodoDraft draft)
+        {
+            item.Note = draft.Note ?? string.Empty;
+            item.Category = (draft.Category ?? string.Empty).Trim();
+            item.DueOn = draft.DueOn;
+            item.ReminderOn = draft.ReminderOn;
+            item.Repeat = draft.Repeat;
+            item.RepeatAnchorDay = draft.RepeatAnchorDay;
+            item.SourceEntryId = draft.SourceEntryId;
+            item.SourceFrom = draft.SourceFrom;
+            item.SourceReceivedOn = draft.SourceReceivedOn;
+        }
+
         public void Remove(string id)
         {
             var item = Find(id);
@@ -145,21 +242,6 @@ namespace OutlookAiHelper.Application
             }
 
             return mail.FromAddress;
-        }
-
-        /// <summary>
-        /// Converts Outlook's ReceivedTime to a UTC instant. Outlook reports local time
-        /// with an unspecified Kind, so an unspecified value is read as local — the same
-        /// interpretation the mail list itself uses when it prints the timestamp.
-        /// </summary>
-        private static DateTime? ToUtc(DateTime value)
-        {
-            if (value == default(DateTime))
-            {
-                return null;
-            }
-
-            return value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
         }
 
         private TodoItem Find(string id)

@@ -785,3 +785,27 @@ AI 供應者的編輯方式（設定頁第 5 區塊）：
 - **打字只改畫面**：查詢空的時候不過濾（`IsActive` 為 false），所以清空就回到原本的清單，不需要重掃；查無結果時顯示 `search.mail.empty`／`search.todo.empty`（帶查詢字串），與「本來就沒有郵件／待辦」的空狀態分開。
 
 **驗證**：`tests/ListSearchTests.cs` 註冊進 `tests/TestRunner.cs`；`tests/AutoRefreshTests.cs` 加三條（探針壞掉仍在上限掃、探針看到變化會提前掃、從未掃過的郵箱第一次 tick 就掃），測試 223 → 237 全過。面板 harness 新增第七種狀態 12 條（寄件者姓名、主旨中的一個詞、收件者、查無此詞清空清單、清空後全部回來、待辦標題同理），合計 100/100、exit 0；第六種狀態的窄視窗斷言仍綠（工具列 98px → 146px）。
+
+### 12.8 自訂掃描天數、待辦編輯器、設計稽核（v1.7.0）
+
+**掃描天數。** 工具列的天數下拉原本只有 7/14/30/60/90 五個數字，`ApplySettingsToToolbar` 也只在找不到符合項目時臨時插一筆字串；一旦清單重建，自訂值就退回 30，設定頁與工具列因此可能各說各話。
+
+- **一個規則**：`Core/Models/ScanDays.cs` 定義 `Min=1`、`Max=365`、`Default=30`、`Presets` 與 `TryParse`／`Clamp`。設定頁、工具列、掃描本身都走它。
+- **自訂入口**：下拉最後一項是「自訂…」。選它會先把選取還原成目前生效值，再開 `UI/CustomScanDaysSheet.cs`（`UiKit.GlassSheet`；Enter 送出、Esc 取消、錯誤就地顯示）。接受後寫入 `AppSettings.ScanDays` 並存檔。
+- **兩個面同步**：`UI/MainWindow.Days.cs` 的 `SyncDaysPickers()` 把生效值同時鏡射到 `_daysBox` 與 `_settingsDays`，並用 `_suppressDaysUi` 擋掉指派索引所引發的 `SelectionChanged`。非預設值會插進下拉清單，所以控制項顯示的永遠是實際生效的數字，而不是「自訂…」。
+- **掃描仍以設定為準**：`RunScanAsync` 解析不到選取項目時改讀 `AppSettings.ScanDays`，並以 `ScanDays.Default` 取代原本寫死的 30。
+
+**待辦編輯器。** 新增待辦不再直接複製郵件，而是先開 `UI/TodoComposerSheet.cs`：標題、內容（兩者都能一鍵套用郵件主旨／內文）、截止日、提醒日期、重複（不重複／每天／每週／每月／每年）、自訂分類（可從既有分類挑）、上傳檔案，以及「把這封信附加到待辦」。日期一律由 `Core/Models/TodoDates.cs` 把本機選定的「日」正規化成當日結束的 UTC，與列上既有的「N 天後到期」同語意（0 天＝無到期日）。
+
+- **草稿是唯一輸入**：`Core/Models/TodoDraft.cs` 把表單結果集中成一個物件，`TodoUseCase.AddDraft`／`UpdateDraft` 負責套用；檔案 I/O 留在 `Adapters/Storage/TodoAttachmentStore.cs`，只複製到使用者資料夾，檔名重新產生（不沿用原始路徑），單檔上限與移除都受控。
+- **重複的收尾**：勾選重複待辦時，`ToggleDone` 會把截止日與提醒一起推到下一次（`TodoRecurrence.Next`，以 `RepeatAnchorDay` 釘住 31 日／閏日）並保持未完成；狀態列說明新日期，避免「勾了卻沒消失」的誤解。
+
+**設計稽核與修復。**
+
+- **寫進去的欄位沒地方看**：分類、提醒、重複原本只有編輯器寫入、右側資訊面板不顯示。`UI/MainWindow.Detail.cs` 的 `TodoFactRows` 現在列出這三項；提醒已過且仍未完成時加註「已過提醒時間」，這也是 `TodoItem.IsReminderDue` 第一次有呼叫者。
+- **手動新增繞過編輯器**：輸入框打字後按 Enter 直接呼叫 `AddManual`，只得到一個標題，截止日／提醒／分類／附件全都摸不到。現在改開同一個編輯器，並把已打的字當作標題預填（`TodoComposerSheet.Show` 新增可選的 `prefillTitle`）；預填空白時行為不變。
+- **兩套到期入口**：右側面板保留「今天／N 天後」快速下拉（`DueFromOffset` 回傳當日本機日結束的 UTC，與 `TodoDates.DueFromDay` 同語意），下方另有「編輯」按鈕開完整編輯器；快速路徑不必打開表單，完整路徑也不必離開面板。
+- **不再有第二個天數真相**：`SetDaysSelection` 只轉呼叫 `SyncDaysPickers`，`ApplySettingsToToolbar` 與設定儲存都走同一條路，工具列與設定頁不可能同時顯示兩個不同天數。
+
+**驗證**：`tests/TodoComposerTests.cs`（經 `tests/TestRunner.cs` 註冊）涵蓋天數邊界與解析、日期正規化、重複推進、草稿往返與附件安全；測試 237 → 256 全過。
+

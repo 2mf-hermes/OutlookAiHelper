@@ -108,6 +108,14 @@ namespace OutlookAiHelper.UI
             _todoDuePicker.Margin = new Thickness(0, 8, 0, 0);
             editor.Children.Add(_todoDuePicker);
 
+            // The picker above is a shortcut for the common cases; the sheet is where the
+            // rest of the item (reminder, repeat, category, files, body) is changed.
+            _todoEditButton = UiKit.Secondary(Strings.T("todo.action.edit"), (s, e) => OpenTodoComposerForEdit(_detailTodo));
+            AutomationProperties.SetName(_todoEditButton, Strings.T("todo.action.edit"));
+            _todoEditButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _todoEditButton.Margin = new Thickness(0, 8, 0, 0);
+            editor.Children.Add(_todoEditButton);
+
             _todoOpenMailButton = UiKit.Secondary(Strings.T("todo.action.openMail"), (s, e) => OpenTodoSourceMail(_detailTodo));
             _todoOpenMailButton.HorizontalAlignment = HorizontalAlignment.Stretch;
             _todoOpenMailButton.Margin = new Thickness(0, 10, 0, 0);

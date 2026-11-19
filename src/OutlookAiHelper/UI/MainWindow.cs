@@ -240,13 +240,7 @@ namespace OutlookAiHelper.UI
                 return;
             }
 
-            var dayText = _settings.ScanDays.ToString();
-            _daysBox.SelectedItem = dayText;
-            if (_daysBox.SelectedItem == null)
-            {
-                _daysBox.Items.Insert(0, dayText);
-                _daysBox.SelectedItem = dayText;
-            }
+            SetDaysSelection(_settings.ScanDays);
         }
 
         private UIElement BuildChrome()
@@ -598,21 +592,6 @@ namespace OutlookAiHelper.UI
                 }
             };
             return button;
-        }
-
-        private ComboBox BuildDaysPicker()
-        {
-            var box = UiKit.Select();
-            WithName(box, Strings.T("settings.days"));
-            box.Width = 96;
-            box.Height = 32;
-            foreach (var d in new[] { "7", "14", "30", "60", "90" })
-            {
-                box.Items.Add(d);
-            }
-
-            box.SelectedItem = "30";
-            return box;
         }
 
         private Panel BuildCenter()
@@ -1968,7 +1947,14 @@ namespace OutlookAiHelper.UI
                 if (item.Status != TodoStatus.Done)
                 {
                     _suppressTodoUi = true;
-                    try { _todos.ToggleDone(item.Id); BindTodos(); }
+                    try
+                    {
+                        // A repeating follow-up stays open and moves to its next date;
+                        // without saying so the box would look like it failed to tick.
+                        var next = _todos.ToggleDone(item.Id);
+                        BindTodos();
+                        AnnounceRepeat(next);
+                    }
                     finally { _suppressTodoUi = false; }
                 }
             };
@@ -2183,10 +2169,10 @@ namespace OutlookAiHelper.UI
                 }
             }
 
-            _todos.AddFromMail(_selected.Mail, Strings.QuadrantName(_selected.Classification.Quadrant));
-            _mailBadgeStale = true;
-            _statusText.Text = Strings.T("todo.added");
-            ShowPage("todo");
+            // The follow-up is now composed rather than cloned: title, body, deadline,
+            // reminder, repeat, category, files and the mail itself are all chosen in the
+            // sheet, with the mail's own text offered as one-click fills.
+            OpenTodoComposerForMail();
         }
 
         private void OnAddManualTodoClick(object sender, RoutedEventArgs e)
@@ -2202,9 +2188,12 @@ namespace OutlookAiHelper.UI
                 return;
             }
 
-            _todos.AddManual(title);
+            // v1.7.0: a typed-in title used to become a title-only follow-up, so the
+            // due date, reminder, repeat, category and files were only reachable from
+            // the mail path. The typed text is now the composer's opening title, which
+            // leaves the quick path intact for anyone who only wants a line of text.
+            OpenTodoComposer(title.Trim());
             _todoInput.Text = string.Empty;
-            BindTodos();
         }
 
         private void ShowEmpty()
@@ -2968,8 +2957,10 @@ namespace OutlookAiHelper.UI
             int days;
             if (!int.TryParse(Convert.ToString(_daysBox != null ? _daysBox.SelectedItem : null), out days))
             {
-                days = _settings != null ? _settings.ScanDays : 30;
+                days = _settings != null ? _settings.ScanDays : ScanDays.Default;
             }
+
+            days = ScanDays.Clamp(days);
 
             _cancel = new CancellationTokenSourceLike();
             _scanRunning = true;
@@ -3650,16 +3641,10 @@ namespace OutlookAiHelper.UI
 
         private void OnSaveSettingsClick(object sender, RoutedEventArgs e)
         {
-            int days = 30;
-            if (_settingsDays != null)
-            {
-                int.TryParse(_settingsDays.Text.Trim(), out days);
-            }
-
-            if (days <= 0)
-            {
-                days = 30;
-            }
+            // One range rule for both surfaces: an unparsable or out-of-bounds entry keeps
+            // the stored value instead of silently becoming 30.
+            var days = _settings != null ? ScanDays.Clamp(_settings.ScanDays) : ScanDays.Default;
+            var daysValid = _settingsDays != null && ScanDays.TryParse(_settingsDays.Text, out days);
 
             if (_settings == null)
             {
@@ -3702,7 +3687,7 @@ namespace OutlookAiHelper.UI
 
             ApplyMailOrdering();
             RefreshAiProviderCombo();
-            _statusText.Text = Strings.T("settings.saved");
+            _statusText.Text = daysValid ? Strings.T("settings.saved") : Strings.T("settings.days.invalid");
 
             if (!string.Equals(previousLanguage, _settings.Language, StringComparison.OrdinalIgnoreCase))
             {

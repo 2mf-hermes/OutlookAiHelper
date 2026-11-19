@@ -56,6 +56,43 @@ namespace OutlookAiHelper.Adapters.Storage
         // field existed, which deserializes to null and falls back to CreatedOn.
         [DataMember(Order = 11)]
         public string SourceReceivedOn { get; set; }
+
+        // Added in schema 2. Every one of these is optional: a file written by an
+        // earlier build simply has no member and deserializes to null/0.
+        [DataMember(Order = 12)]
+        public string ReminderOn { get; set; }
+
+        [DataMember(Order = 13)]
+        public string Repeat { get; set; }
+
+        [DataMember(Order = 14)]
+        public int RepeatAnchorDay { get; set; }
+
+        [DataMember(Order = 15)]
+        public string Category { get; set; }
+
+        [DataMember(Order = 16)]
+        public List<TodoAttachmentRecord> Attachments { get; set; }
+    }
+
+    /// <summary>
+    /// The metadata of one attached file. Its bytes are not in this document; the
+    /// record points at a file the attachment store copied into its own folder.
+    /// </summary>
+    [DataContract]
+    public sealed class TodoAttachmentRecord
+    {
+        [DataMember(Order = 1)]
+        public string FileName { get; set; }
+
+        [DataMember(Order = 2)]
+        public string StoredName { get; set; }
+
+        [DataMember(Order = 3)]
+        public long SizeBytes { get; set; }
+
+        [DataMember(Order = 4)]
+        public string AddedOn { get; set; }
     }
 
     public sealed class JsonTodoStore : ITodoStore
@@ -114,7 +151,7 @@ namespace OutlookAiHelper.Adapters.Storage
             JsonPaths.EnsureRoot();
             var doc = new TodoDocument
             {
-                SchemaVersion = 1,
+                SchemaVersion = 2,
                 Items = new List<TodoRecord>()
             };
 
@@ -155,7 +192,12 @@ namespace OutlookAiHelper.Adapters.Storage
                 Status = status,
                 CreatedOn = ParseDate(record.CreatedOn),
                 UpdatedOn = ParseDate(record.UpdatedOn),
-                DueOn = string.IsNullOrEmpty(record.DueOn) ? (DateTime?)null : ParseDate(record.DueOn),
+                DueOn = ParseDateOrNull(record.DueOn),
+                ReminderOn = ParseDateOrNull(record.ReminderOn),
+                Repeat = TodoRecurrence.Parse(record.Repeat),
+                RepeatAnchorDay = record.RepeatAnchorDay,
+                Category = record.Category ?? string.Empty,
+                Attachments = ToAttachments(record.Attachments),
                 SourceFrom = record.SourceFrom,
                 SourceReceivedOn = string.IsNullOrEmpty(record.SourceReceivedOn)
                     ? (DateTime?)null
@@ -176,6 +218,11 @@ namespace OutlookAiHelper.Adapters.Storage
                 CreatedOn = item.CreatedOn.ToString("o"),
                 UpdatedOn = item.UpdatedOn.ToString("o"),
                 DueOn = item.DueOn.HasValue ? item.DueOn.Value.ToString("o") : null,
+                ReminderOn = item.ReminderOn.HasValue ? item.ReminderOn.Value.ToString("o") : null,
+                Repeat = TodoRecurrence.Key(item.Repeat),
+                RepeatAnchorDay = item.RepeatAnchorDay,
+                Category = item.Category,
+                Attachments = ToAttachmentRecords(item.Attachments),
                 SourceFrom = item.SourceFrom,
                 SourceReceivedOn = item.SourceReceivedOn.HasValue
                     ? item.SourceReceivedOn.Value.ToString("o")
@@ -196,6 +243,78 @@ namespace OutlookAiHelper.Adapters.Storage
             }
 
             return DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// A date that is allowed to be absent, and that is absent when the stored text
+        /// is unreadable too. <see cref="ParseDate"/> falls back to "now", which is
+        /// right for CreatedOn but wrong for a deadline: a corrupt value must not turn
+        /// a follow-up into an overdue one.
+        /// </summary>
+        private static DateTime? ParseDateOrNull(string value)
+        {
+            DateTime parsed;
+            if (!string.IsNullOrEmpty(value)
+                && DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out parsed))
+            {
+                return parsed;
+            }
+
+            return null;
+        }
+
+        private static List<TodoAttachment> ToAttachments(List<TodoAttachmentRecord> records)
+        {
+            var list = new List<TodoAttachment>();
+            if (records == null)
+            {
+                return list;
+            }
+
+            foreach (var record in records)
+            {
+                if (record == null || string.IsNullOrEmpty(record.StoredName))
+                {
+                    continue;
+                }
+
+                list.Add(new TodoAttachment
+                {
+                    FileName = record.FileName ?? string.Empty,
+                    StoredName = record.StoredName,
+                    SizeBytes = record.SizeBytes,
+                    AddedOn = ParseDateOrNull(record.AddedOn) ?? DateTime.UtcNow
+                });
+            }
+
+            return list;
+        }
+
+        private static List<TodoAttachmentRecord> ToAttachmentRecords(List<TodoAttachment> attachments)
+        {
+            var list = new List<TodoAttachmentRecord>();
+            if (attachments == null)
+            {
+                return list;
+            }
+
+            foreach (var attachment in attachments)
+            {
+                if (attachment == null || string.IsNullOrEmpty(attachment.StoredName))
+                {
+                    continue;
+                }
+
+                list.Add(new TodoAttachmentRecord
+                {
+                    FileName = attachment.FileName,
+                    StoredName = attachment.StoredName,
+                    SizeBytes = attachment.SizeBytes,
+                    AddedOn = attachment.AddedOn.ToString("o")
+                });
+            }
+
+            return list;
         }
 
         private void TryQuarantine()
